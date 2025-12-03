@@ -1,6 +1,6 @@
-# TAIC Smart Assistant
+# TAIC smart tools
 
-> An intelligent assistant and knowledge search tool for internal use at the New Zealand Transport Accident Investigation Commission
+> A platform for smart tools for internal use at the New Zealand Transport Accident Investigation Commission. Featured tools are smart assistant and smart document search.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Continuous Integration](https://github.com/1jamesthompson1/TAIC_smart_assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/1jamesthompson1/TAIC_smart_assistant/actions/workflows/ci.yml)
@@ -20,7 +20,7 @@
 - Conversation history and management
 
 🔍 **Advanced Knowledge Search**
-- Vector-based semantic search across TAIC, ATSB and TSB documents
+- Vector-based semantic search across TAIC, ATSB and TSB documents (database created by [TAIC-engine](https://github.com/1jamesthompson1/TAIC-engine)
 - Filter by document type, agency, year, and transport mode
 - Visual analytics and result export capabilities
 
