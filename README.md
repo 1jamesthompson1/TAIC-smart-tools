@@ -88,6 +88,10 @@ uv run uvicorn app:app --host localhost --port 7860 --reload --timeout-graceful-
 
 ### Development Workflow
 
+The current project is setup asssuming few contributer each with full access. Therefore contribution is managed via feature branches and pull requests. Pull requests from forks cause problems with the CI/CD setup so are discouraged.
+
+Internally at TAIC we are working with Azure DevOps. From there you can create a branch directly from a work item. This automates the first step.
+
 1. Create a feature branch from `main`
 2. Make your changes with appropriate commit messages
 3. Create a pull request with a prefix of the type of change (`major:`, `minor:`, `patch:`)
