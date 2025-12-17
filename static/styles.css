@@ -2,8 +2,14 @@
 :root {
     --taic-primary: #2e679c;
     --taic-secondary: #e6dca1;
-    --taic-neutral-50: #f9fafb; /* Light gray */
-    --taic-neutral-900: #111827; /* Dark gray */
+ 
+    --taic-neutral-50: #111827;  /* Dark gray */
+    --taic-neutral-900: #f9fafb; /* Light gray */
+}
+
+:root .dark {
+    --taic-neutral-50: #f9fafb;
+    --taic-neutral-900: #111827;
 }
 
 
