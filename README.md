@@ -4,7 +4,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Continuous Integration](https://github.com/1jamesthompson1/TAIC-smart-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/1jamesthompson1/TAIC-smart-tools/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/Version-0.6.2-blue)
+![Version](https://img.shields.io/badge/Version-0.6.3-blue)
 
 ## Preview
 
@@ -87,6 +87,10 @@ uv run uvicorn app:app --host localhost --port 7860 --reload --timeout-graceful-
 - For the tools interface: `http://localhost:7860/tools`
 
 ### Development Workflow
+
+The current project is setup asssuming few contributer each with full access. Therefore contribution is managed via feature branches and pull requests. Pull requests from forks cause problems with the CI/CD setup so are discouraged.
+
+Internally at TAIC we are working with Azure DevOps. From there you can create a branch directly from a work item. This automates the first step.
 
 1. Create a feature branch from `main`
 2. Make your changes with appropriate commit messages
