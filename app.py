@@ -1363,6 +1363,7 @@ with gr.Blocks(
 ) as login_page:
     with gr.Column(elem_classes="complete-center"):
         gr.Markdown("# TAIC smart tools")
+        gr.Markdown(f"**App version:** {Version.CURRENT_VERSION}")
         gr.Markdown("Please login to continue:")
         gr.Button("Login", link="/login")
 
