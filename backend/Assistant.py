@@ -401,18 +401,12 @@ class Assistant:
             msg = msg[-conversation_context_length:]
 
         return (
-            self.openai_client.chat.completions.create(
+            self.openai_client.responses.create(
                 model="gpt-4.1-nano",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": AssistantPrompts.conversation_title(),
-                    },
-                    *msg,
-                ],
-            )
-            .choices[0]
-            .message.content
+                instructions=AssistantPrompts.conversation_title(),
+                input=msg,
+                store=False,
+            ).output_text
         ).strip()
 
     def complete_tool_use(
