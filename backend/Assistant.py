@@ -38,8 +38,8 @@ class CompleteHistory(list):
 
     def format(self):
         """
-        Pre to 0.3.0 the message was justa  list of dict with "role", "content" and optional "metadata".
-        Need to expand this out into the full format with "display" and "ai" keys. TO do this just copy the message to both and only have role and content for the ai key.
+        Pre to 0.3.0 the message was just a list of dict with "role", "content" and optional "metadata".
+        Need to expand this out into the full format with "display" and "ai" keys. To do this just copy the message to both and only have role and content for the ai key.
         """
         new_history = []
 
