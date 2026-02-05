@@ -283,8 +283,8 @@ class AssistantPrompts:
     @staticmethod
     def conversation_title():
         return """
-You are part of a chatbot assistant at the Transport Accident Investigation Commission that help users add titles to their conversation. You will receive the conversation and you are too response with a 5 word summary of the conversation.
-Provide a title that will best help the user identify what conversation it was.
+You are part of a chatbot assistant at the Transport Accident Investigation Commission. You help users add titles to their conversation. You will receive the conversation and you are to respond with a 5 word summary of the conversation.
+Provide a title that will best help the user recall what the conversation was.
 Just respond with the title and nothing else.
         """
 
