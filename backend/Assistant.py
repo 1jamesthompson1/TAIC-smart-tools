@@ -402,7 +402,7 @@ class Assistant:
 
         return (
             self.openai_client.responses.create(
-                model="gpt-4.1-nano",
+                model="gpt-5-mini",
                 instructions=AssistantPrompts.conversation_title(),
                 input=msg,
                 store=False,
