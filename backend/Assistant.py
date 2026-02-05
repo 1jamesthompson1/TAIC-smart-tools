@@ -38,8 +38,8 @@ class CompleteHistory(list):
 
     def format(self):
         """
-        Pre to 0.3.0 the message was justa  list of dict with "role", "content" and optional "metadata".
-        Need to expand this out into the full format with "display" and "ai" keys. TO do this just copy the message to both and only have role and content for the ai key.
+        Pre to 0.3.0 the message was just a list of dict with "role", "content" and optional "metadata".
+        Need to expand this out into the full format with "display" and "ai" keys. To do this just copy the message to both and only have role and content for the ai key.
         """
         new_history = []
 
@@ -283,8 +283,8 @@ class AssistantPrompts:
     @staticmethod
     def conversation_title():
         return """
-You are part of a chatbot assistant at the Transport Accident Investigation Commission that help users add titles to their conversation. You will receive the conversation and you are too response with a 5 word summary of the conversation.
-Provide a title that will best help the user identify what conversation it was.
+You are part of a chatbot assistant at the Transport Accident Investigation Commission. You help users add titles to their conversation. You will receive the conversation and you are to respond with a 5 word summary of the conversation.
+Provide a title that will best help the user recall what the conversation was.
 Just respond with the title and nothing else.
         """
 
@@ -401,18 +401,12 @@ class Assistant:
             msg = msg[-conversation_context_length:]
 
         return (
-            self.openai_client.chat.completions.create(
-                model="gpt-4.1-nano",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": AssistantPrompts.conversation_title(),
-                    },
-                    *msg,
-                ],
-            )
-            .choices[0]
-            .message.content
+            self.openai_client.responses.create(
+                model="gpt-5-mini",
+                instructions=AssistantPrompts.conversation_title(),
+                input=msg,
+                store=False,
+            ).output_text
         ).strip()
 
     def complete_tool_use(
