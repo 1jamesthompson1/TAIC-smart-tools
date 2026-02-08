@@ -79,11 +79,16 @@ cp .env.example .env
 4. **Run the app locally**
 
 ```bash
-uv run uvicorn app:app --host localhost --port 7860 --reload --timeout-graceful-shutdown 1
+# Development mode with auto-reload (app + docs)
+uv run working_files/dev.py
+
+# Or run just the app
+uv run uvicorn app:app --host localhost --port 7860 --reload --timeout-graceful-shutdown 2
 ```
 
 5. **Access the application**
 - Open your browser to `http://localhost:7860`
+- Documentation: `http://localhost:7860/documentation`
 - For the tools interface: `http://localhost:7860/tools`
 
 ### Development Workflow

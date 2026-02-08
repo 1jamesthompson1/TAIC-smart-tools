@@ -105,6 +105,11 @@ print("[bold green]✓ All storage systems initialized[/bold green]")
 app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount(
+    "/documentation",
+    StaticFiles(directory="site", html=True),
+    name="documentation",
+)
 
 # Azure AD OAuth settings
 AZURE_CLIENT_ID = os.getenv("CLIENT_ID")

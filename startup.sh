@@ -1,6 +1,13 @@
 #!/bin/bash
 
+# ----------------------------------------------------------------------
+# FOR PRODUCTION DEPLOYMENT ONLY
+# ----------------------------------------------------------------------
+# For development, use 'uv run working_files/dev.py' to start the app with auto-reload and docs rebuilding.
+
 # This script downloads the vectordb using azcopy and then starts the application
+
+
 
 set -e  # Exit on any error
 
