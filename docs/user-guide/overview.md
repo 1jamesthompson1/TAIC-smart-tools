@@ -42,7 +42,3 @@ The application works best with:
 - Modern web browser (Chrome, Firefox, Safari, Edge)
 - Stable internet connection
 - Screen resolution of 1280x720 or higher
-
-## Support
-
-For technical issues or questions, contact your system administrator or the development team.

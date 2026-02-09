@@ -32,22 +32,43 @@ Each module page includes:
 
 Navigate using the sidebar or click the module links above.
 
-## Code Examples
-
-Throughout the API reference, you'll find examples showing how to use various components:
+## An example docstring
 
 ```python
-from backend.Assistant import Assistant
-from backend.Searching import Searcher
+def your_function(param1: str, param2: int) -> Result:
+    """Short description.
 
-# Create a searcher
-searcher = Searcher(vector_db_path="workbench/vectordb")
+    Longer description if needed.
 
-# Perform a search
-results = searcher.search(
-    query="runway safety incidents",
-    max_results=10
-)
+    Args:
+        param1: Description of param1.
+        param2: Description of param2.
+
+    Returns:
+        Description of return value.
+
+    Examples:
+        Basic usage:
+
+        >>> result = your_function("test", 42)
+        >>> print(result)
+        Result(value='test', count=42)
+
+        Or with a more complete example:
+
+        ```python
+        from mymodule import your_function
+        
+        # Setup
+        data = prepare_data()
+        
+        # Execute
+        result = your_function(data.name, data.count)
+        
+        # Result
+        print(result.value)  # Output: 'test'
+        ```
+    """
 ```
 
 ## Contributing

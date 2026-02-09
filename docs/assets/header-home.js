@@ -15,7 +15,7 @@
     var link = document.createElement("a");
     link.className = "md-button md-button--primary";
     link.href = "/tools";
-    link.textContent = "Smart Tools";
+    link.textContent = "Smart Tools Webapp";
 
     container.appendChild(link);
     header.appendChild(container);

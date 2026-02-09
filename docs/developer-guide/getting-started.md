@@ -53,6 +53,9 @@ uv run python working_files/download_vector_db.py
 
 ### 5. Configure Environment
 
+!!! tip
+    TAIC employees: see wiki which explains how to get relevant Azure secrets and the right `.env` file.
+
 ```bash
 # Copy the example environment file
 cp .env.example .env
@@ -72,8 +75,10 @@ Required environment variables:
 ### 6. Run the Application
 
 ```bash
-uv run uvicorn app:app --host localhost --port 7860 --reload --timeout-graceful-shutdown 1
+uv run working_files/dev.py
 ```
+
+This will start both the webapp and the mkdocs documentation server with live reload. Access the webapp at `http://localhost:7860` and the docs at `http://localhost:7860/documentation`.
 
 ### 7. Access the Application
 
@@ -134,17 +139,6 @@ uv run pytest --cov=backend --cov-report=html
 # Run specific test file
 uv run pytest tests/test_assistant.py
 ```
-
-## Building Documentation
-
-```bash
-# Serve docs locally with live reload
-uv run mkdocs serve
-
-# Build static docs
-uv run mkdocs build
-```
-
 ## Common Tasks
 
 ### Updating Dependencies
