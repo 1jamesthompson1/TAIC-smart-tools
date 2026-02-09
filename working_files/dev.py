@@ -1,6 +1,5 @@
 # noqa: INP001
-"""
-Development server for TAIC Smart Tools.
+"""Development server for TAIC Smart Tools.
 
 Runs both the FastAPI/Gradio app and auto-rebuilds documentation when files change.
 
@@ -10,7 +9,7 @@ Usage:
 
 import logging
 import shutil
-import subprocess
+import subprocess  # noqa: S404
 import time
 from pathlib import Path
 
@@ -22,7 +21,17 @@ logger = logging.getLogger(__name__)
 
 
 def resolve_executable(name: str) -> str:
-    """Resolve full path to an executable or raise an error."""
+    """Resolve full path to an executable or raise an error.
+
+    Args:
+        name: Executable name to resolve.
+
+    Returns:
+        The resolved full path to the executable.
+
+    Raises:
+        FileNotFoundError: If the executable cannot be found on PATH.
+    """
     path = shutil.which(name)
     if not path:
         msg = f"Executable not found: {name}"
@@ -34,12 +43,21 @@ class DocsRebuilder(FileSystemEventHandler):
     """Handles file system events and triggers documentation rebuilds."""
 
     def __init__(self):
+        """Initialize the docs rebuilder with debouncing settings."""
         self.last_rebuild = 0
         self.debounce_seconds = 1.5
         self.pending_rebuild = False
 
-    def should_rebuild(self, event):
-        """Check if the event should trigger a rebuild."""
+    @staticmethod
+    def should_rebuild(event):
+        """Check if the event should trigger a rebuild.
+
+        Args:
+            event: The file system event to check.
+
+        Returns:
+            True if the event should trigger a rebuild, False otherwise.
+        """
         if event.is_directory:
             return False
 
@@ -82,7 +100,7 @@ class DocsRebuilder(FileSystemEventHandler):
         self.pending_rebuild = False
 
         logger.debug("\n🔄 Change detected: %s", Path(changed_file).name)
-        logger.info("📚 Rebuilding docs...", end=" ", flush=True)
+        logger.info("📚 Rebuilding docs...")
 
         try:
             result = subprocess.run(  # noqa: S603
@@ -110,7 +128,11 @@ class DocsRebuilder(FileSystemEventHandler):
 
 
 def start_docs_watcher():
-    """Start watching files and rebuilding docs."""
+    """Start watching files and rebuilding docs.
+
+    Returns:
+        A tuple containing the observer and event handler instances.
+    """
     # Initial build
     logger.info("📚 Building documentation...")
     try:

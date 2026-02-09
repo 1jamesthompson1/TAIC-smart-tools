@@ -2,6 +2,8 @@
 
 This guide will help you get started with TAIC Smart Tools.
 
+[Back to smart tools](/tools){ .md-button }
+
 ## Available Tools
 
 ### Smart Assistant

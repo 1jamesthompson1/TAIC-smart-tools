@@ -90,44 +90,59 @@ def search_documents(
     max_results: int = 10,
 ) -> list[Document]:
     """Search for documents matching the query.
-    
+
     Args:
-        query: The search query string
-        filters: Dictionary of filter criteria
-        max_results: Maximum number of results to return
-        
+        query: The search query string.
+        filters: Dictionary of filter criteria.
+        max_results: Maximum number of results to return.
+
     Returns:
-        List of matching Document objects
+        List of matching Document objects.
     """
     # Implementation
     pass
 ```
 
-### Documentation
+### Documentation (MkDocs)
 
-- All public functions/classes need docstrings
-- Use Google-style docstrings
-- Include examples in docstrings where helpful
-- Keep documentation up-to-date with code
+- Keep docs updated when code changes
+- Use Google-style docstrings for all public APIs
+- Add examples when it improves clarity
 
-Example:
+Quick commands:
 
-```python
-class Searcher:
-    """Handles semantic search across investigation documents.
-    
-    This class provides vector-based similarity search with support
-    for various filtering options.
-    
-    Attributes:
-        embedding_function: Function to convert text to embeddings
-        table: LanceDB table containing document vectors
-        
-    Example:
-        >>> searcher = Searcher(vector_db_path="path/to/db")
-        >>> results = searcher.search("runway safety", max_results=10)
-    """
+```bash
+# Dev mode with auto-rebuild (app + docs)
+uv run working_files/dev.py
+
+# Live docs preview only
+uv run mkdocs serve
+
+# Static build (used by /documentation in the app)
+uv run mkdocs build
 ```
+
+Docs structure:
+
+```
+docs/
+├── index.md
+├── user-guide/
+├── developer-guide/
+└── api/            # Auto-generated from docstrings
+```
+
+Mermaid diagrams:
+
+````markdown
+```mermaid
+graph LR
+    A[User] --> B[Assistant]
+    B --> C[Search Tool]
+```
+````
+
+Docstrings are enforced by Ruff (Google convention) in pre-commit and CI.
 
 ## Testing
 
@@ -228,17 +243,10 @@ uv add --dev package-name
 
 After updating dependencies, test thoroughly and update the lock file.
 
-## Documentation
+## Documentation Access
 
-### Building Docs Locally
-
-```bash
-# Serve with live reload
-uv run mkdocs serve
-
-# Build static site
-uv run mkdocs build
-```
+- Local app docs: `http://localhost:7860/docs`
+- Live preview: `http://127.0.0.1:8000`
 
 ### Adding Documentation
 

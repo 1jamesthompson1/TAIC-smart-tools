@@ -74,6 +74,12 @@ markdown_extensions:
   - toc:
       permalink: true
 
+extra_css:
+  - assets/styles.css
+
+extra_javascript:
+  - assets/header-home.js
+
 nav:
   - Home: index.md
   - User Guide:

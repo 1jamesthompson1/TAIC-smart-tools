@@ -2,6 +2,8 @@
 
 Welcome to the documentation for TAIC Smart Tools - a platform providing AI-powered tools for the New Zealand Transport Accident Investigation Commission.
 
+[To Smart Tools →](/tools){ .md-button .md-button--primary }
+
 ## Overview
 
 TAIC Smart Tools consists of two main features:
