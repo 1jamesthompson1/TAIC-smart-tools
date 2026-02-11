@@ -407,7 +407,7 @@ class Assistant:
 
         # Clear history to only include the last 5 user or assistant messages, no system messages or tool calls
         msg = [
-            m["display"]
+            m["display"]["role"] + ": " + m["display"]["content"]
             for m in history
             if m["display"]["role"] in ["user", "assistant"]
             and m["display"].get("metadata") is None
@@ -420,7 +420,7 @@ class Assistant:
             self.openai_client.responses.create(
                 model="gpt-5-mini",
                 instructions=AssistantPrompts.conversation_title(),
-                input=msg,
+                input=f"Here is the last {conversation_context_length} messages from the conversation history: {msg}. Can you please provide a title to help?",
                 store=False,
             ).output_text
         ).strip()
