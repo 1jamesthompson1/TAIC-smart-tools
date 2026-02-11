@@ -133,10 +133,14 @@ def start_docs_watcher():
     Returns:
         A tuple containing the observer and event handler instances.
     """
+
+    def _abort_build():
+        raise SystemExit(1) from None
+
     # Initial build
     logger.info("📚 Building documentation...")
     try:
-        subprocess.run(  # noqa: S603
+        result = subprocess.run(  # noqa: S603
             [
                 resolve_executable("uv"),
                 "run",
@@ -144,12 +148,25 @@ def start_docs_watcher():
                 "build",
                 "--quiet",
             ],
-            check=True,
+            check=False,
+            capture_output=True,
+            text=True,
             timeout=30,
         )
-        logger.info("✅")
+        if result.returncode == 0:
+            logger.info("✅")
+        else:
+            logger.error("❌ Failed to build documentation!")
+            if result.stderr:
+                logger.error("Error details: %s", result.stderr.strip())
+            logger.error("\nPlease fix documentation errors and try again.")
+            _abort_build()
+    except subprocess.TimeoutExpired:
+        logger.exception("❌ Documentation build timed out!")
+        _abort_build()
     except Exception:
-        logger.exception("❌ Failed Build of docs the first time")
+        logger.exception("❌ Failed to build documentation")
+        _abort_build()
 
     event_handler = DocsRebuilder()
     observer = Observer()
@@ -164,23 +181,23 @@ def start_docs_watcher():
 
 
 def main():
-    """Start all development services."""
+    """Start all development services.
+
+    Raises:
+        SystemExit: If the documentation build or app startup fails.
+    """
     logger.info("🚀 TAIC Smart Tools - Development Server")
-    logger.info("=" * 50)
-    logger.info("")
+    logger.info("%s\n", "=" * 50)
     logger.info("Services:")
     logger.info("  📱 Gradio App:  http://localhost:7860")
     logger.info("  📚 Docs:        http://localhost:7860/documentation")
-    logger.info("")
     logger.info("Auto-reload enabled for:")
     logger.info("  • Python files (app.py, backend/)")
-    logger.info("  • Documentation (docs/, mkdocs.yml)")
-    logger.info("")
+    logger.info("  • Documentation (docs/, mkdocs.yml)\n")
     logger.info("Press Ctrl+C to stop all services")
-    logger.info("=" * 50)
-    logger.info("")
+    logger.info("%s\n", "=" * 50)
 
-    # Start docs watcher
+    # Start docs watcher - this will exit if build fails
     observer, event_handler = start_docs_watcher()
 
     # Give a moment for initial build
@@ -189,21 +206,28 @@ def main():
     # Start FastAPI/Gradio app
     logger.info("📱 Starting Gradio app...")
 
-    app_process = subprocess.Popen(  # noqa: S603
-        [
-            resolve_executable("uv"),
-            "run",
-            resolve_executable("uvicorn"),
-            "app:app",
-            "--host",
-            "localhost",
-            "--port",
-            "7860",
-            "--reload",
-            "--timeout-graceful-shutdown",
-            "2",
-        ],
-    )
+    try:
+        app_process = subprocess.Popen(  # noqa: S603
+            [
+                resolve_executable("uv"),
+                "run",
+                resolve_executable("uvicorn"),
+                "app:app",
+                "--host",
+                "localhost",
+                "--port",
+                "7860",
+                "--reload",
+                "--timeout-graceful-shutdown",
+                "2",
+            ],
+            text=True,
+        )
+    except Exception:
+        logger.exception("❌ Failed to start application")
+        observer.stop()
+        observer.join()
+        raise SystemExit(1) from None
 
     try:
         # Watch for pending doc rebuilds
@@ -221,7 +245,20 @@ def main():
 
             # Check if app process died
             if app_process.poll() is not None:
-                logger.error("\n❌ App process ended unexpectedly")
+                # Process ended, capture output for better error messages
+                _, stderr = app_process.communicate()
+
+                if "Address already in use" in stderr or "OSError" in stderr:
+                    logger.error(
+                        "\n❌ Cannot start application - Port 7860 is already in use!",
+                    )
+                    logger.error(
+                        "   Kill the existing process or use a different port.",
+                    )
+                    logger.error("\n   Error details:\n%s", stderr)
+                    break
+
+                logger.error("\n❌ Application process ended unexpectedly")
                 break
 
     except KeyboardInterrupt:
