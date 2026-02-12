@@ -116,11 +116,10 @@ def test_conversation_title_generation(mock_assistant):
     history.add_message("assistant", "Aviation safety is...")
 
     # Mock OpenAI response for title generation
-    with patch.object(mock_assistant.openai_client, "chat") as mock_chat:
+    with patch.object(mock_assistant.openai_client, "responses") as mock_responses:
         mock_response = Mock()
-        mock_response.choices = [Mock()]
-        mock_response.choices[0].message.content = "Aviation Safety Discussion"
-        mock_chat.completions.create.return_value = mock_response
+        mock_response.output_text = "Aviation Safety Discussion"
+        mock_responses.create.return_value = mock_response
 
         title = mock_assistant.provide_conversation_title(history)
         assert isinstance(title, str)
