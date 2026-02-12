@@ -114,16 +114,18 @@ def test_conversation_title_generation(mock_assistant):
     history = CompleteHistory([])
     history.add_message("user", "Tell me about aviation safety")
     history.add_message("assistant", "Aviation safety is...")
+    max_len = 100
 
     # Mock OpenAI response for title generation
     with patch.object(mock_assistant.openai_client, "responses") as mock_responses:
         mock_response = Mock()
-        mock_response.output_text = "Aviation Safety Discussion"
+        mock_response.output_text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna."
         mock_responses.create.return_value = mock_response
 
         title = mock_assistant.provide_conversation_title(history)
         assert isinstance(title, str)
         assert len(title) > 0
+        assert len(title) <= max_len
 
 
 def test_history_format_validation():
