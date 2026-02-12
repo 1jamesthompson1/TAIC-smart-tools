@@ -1,3 +1,8 @@
+"""Module enabling semantic search and embedding.
+
+This module is used by the semantic search tool.
+"""
+
 import os
 from typing import ClassVar, Literal, NamedTuple
 
@@ -16,47 +21,56 @@ from rich import print, table  # noqa: A004
 # This has to be added in manually unless https://github.com/lancedb/lancedb/issues/2518 is resolved
 @register("azure-ai-text")
 class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
-    """
-    An embedding function that uses the AzureAI API
+    """An embedding function that uses the AzureAI API.
 
     https://learn.microsoft.com/en-us/python/api/overview/azure/ai-inference-readme?view=azure-python-preview
 
     - AZURE_AI_ENDPOINT: The endpoint URL for the AzureAI service.
     - AZURE_AI_API_KEY: The API key for the AzureAI service.
 
-    Parameters
-    ----------
-    - name: str
-        The name of the model you want to use from the model catalog.
+    Parameters:
+        name (str): The name of the model you want to use from the model catalog.
 
+    Examples:
+        Usage example:
 
-    Examples
-    --------
-    import lancedb
-    import pandas as pd
-    from lancedb.pydantic import LanceModel, Vector
-    from lancedb.embeddings import get_registry
+        ```python
+        import lancedb
+        import pandas as pd
+        from lancedb.pydantic import LanceModel, Vector
+        from lancedb.embeddings import get_registry
 
-    model = get_registry().get("azure-ai-text").create(name="embed-v-4-0")
+        model = get_registry().get("azure-ai-text").create(name="embed-v-4-0")
 
-    class TextModel(LanceModel):
-        text: str = model.SourceField()
-        vector: Vector(model.ndims()) = model.VectorField()
+        class TextModel(LanceModel):
+            text: str = model.SourceField()
+            vector: Vector(model.ndims()) = model.VectorField()
 
-    df = pd.DataFrame({"text": ["hello world", "goodbye world"]})
-    db = lancedb.connect("lance_example")
-    tbl = db.create_table("test", schema=TextModel, mode="overwrite")
+        df = pd.DataFrame({"text": ["hello world", "goodbye world"]})
+        db = lancedb.connect("lance_example")
+        tbl = db.create_table("test", schema=TextModel, mode="overwrite")
 
-    tbl.add(df)
-    rs = tbl.search("hello").limit(1).to_pandas()
-    #           text                                             vector  _distance
-    # 0  hello world  [-0.018188477, 0.0134887695, -0.013000488, 0.0...   0.841431
+        tbl.add(df)
+        rs = tbl.search("hello").limit(1).to_pandas()
+        #           text                                             vector  _distance
+        # 0  hello world  [-0.018188477, 0.0134887695, -0.013000488, 0.0...   0.841431
+        ```
     """
 
     name: str
     client: ClassVar = None
 
     def ndims(self):
+        """Return the number of dimensions used.
+
+        Checks the embedding model used and returns the number of dimensions.
+
+        Returns:
+            str: Name of the embedding model being used.
+
+        Raises:
+            ValueError: If unknown model.
+        """
         if self.name == "embed-v-4-0":
             return 1536
         if self.name in {"Cohere-embed-v3-english", "Cohere-embed-v3-multilingual"}:
@@ -91,16 +105,22 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         *_args,
         **kwargs,
     ) -> list[np.array]:
-        """
-        Get the embeddings for the given texts
+        """Get the embeddings for the given texts.
 
-        Parameters
-        ----------
-        texts: list[str] or np.ndarray (of str)
-            The texts to embed
-        input_type: Optional[str]
+        Parameters:
+            texts (list[str] or np.ndarray[str]): The texts to embed
+            *arg: Optional arguments (see below)
+            **kwargs: Keywords passed to the embedding function.
+                Supported keys:
 
-        truncation: Optional[bool]
+                - input_type (str)
+                - truncation (bool)
+
+        Returns:
+            list: Embedding
+
+        Raises:
+            ValueError: If texts parameter is an np.ndarray with the wrong data type. 
         """
         AzureAITextEmbeddingFunction._init_client()
 
@@ -145,6 +165,7 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
 
 
 class SearchParams(NamedTuple):
+    """Simple class to store search parameters."""
     query: str
     search_type: Literal["fts", "vector"] | None
     year_range: tuple[int, int]
@@ -154,6 +175,7 @@ class SearchParams(NamedTuple):
 
 
 class Searcher:
+    """Manage knowledge search functionality."""
     def __init__(self, db_uri, table_name):
         print("[bold]Creating searcher[/bold]")
         print(f"connecting to database at {db_uri}")
@@ -352,10 +374,16 @@ class Searcher:
 
 
 class GraphMaker:
+    """Supports the display of graphs summaries of search queries."""
     def __init__(self, context):
         self.context = context
 
     def add_visual_layout(self, fig):
+        """Plot a graph.
+
+        Returns:
+            The generated graph.
+        """
         fig = fig.update_layout(width=310)
 
         # If fig a pie chart
@@ -372,6 +400,11 @@ class GraphMaker:
         return fig
 
     def get_document_type_pie_chart(self):
+        """Plot pie chart for 'document type'.
+
+        Returns:
+            A pie chart graph.
+        """
         context_df = self.context["document_type"].value_counts().reset_index()
         context_df.columns = ["document_type", "count"]
         fig = px.pie(
@@ -384,6 +417,11 @@ class GraphMaker:
         return self.add_visual_layout(fig)
 
     def get_mode_pie_chart(self):
+        """Plot pie chart for 'mode'.
+
+        Returns:
+            A pie chart graph.
+        """
         context_df = self.context["mode"].value_counts().reset_index()
         context_df.columns = ["mode", "count"]
         fig = px.pie(
@@ -396,6 +434,11 @@ class GraphMaker:
         return self.add_visual_layout(fig)
 
     def get_year_histogram(self):
+        """Plot histogram per 'year'.
+
+        Returns:
+            An histogram.
+        """
         context_df = self.context
         fig = px.histogram(
             context_df,
@@ -405,6 +448,11 @@ class GraphMaker:
         return self.add_visual_layout(fig)
 
     def get_most_common_event_types(self):
+        """Plot pie chart for most common event types.
+
+        Returns:
+            A pie chart graph.
+        """
         context_df = self.context
         type_counts = context_df.groupby("type")["document"].count()
 
@@ -432,6 +480,11 @@ class GraphMaker:
         return self.add_visual_layout(fig)
 
     def get_agency_pie_chart(self):
+        """Plot pie chart for 'agency'.
+
+        Returns:
+            A pie chart graph.
+        """
         context_df = self.context["agency"].value_counts().reset_index()
         context_df.columns = ["agency", "count"]
         fig = px.pie(
