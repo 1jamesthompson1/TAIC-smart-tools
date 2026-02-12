@@ -120,7 +120,7 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
             list: Embedding
 
         Raises:
-            ValueError: If texts parameter is an np.ndarray with the wrong data type. 
+            ValueError: If texts parameter is an np.ndarray with the wrong data type.
         """
         AzureAITextEmbeddingFunction._init_client()
 
@@ -166,6 +166,7 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
 
 class SearchParams(NamedTuple):
     """Simple class to store search parameters."""
+
     query: str
     search_type: Literal["fts", "vector"] | None
     year_range: tuple[int, int]
@@ -176,6 +177,7 @@ class SearchParams(NamedTuple):
 
 class Searcher:
     """Manage knowledge search functionality."""
+
     def __init__(self, db_uri, table_name):
         print("[bold]Creating searcher[/bold]")
         print(f"connecting to database at {db_uri}")
@@ -375,6 +377,7 @@ class Searcher:
 
 class GraphMaker:
     """Supports the display of graphs summaries of search queries."""
+
     def __init__(self, context):
         self.context = context
 
