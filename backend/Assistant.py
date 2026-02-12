@@ -416,7 +416,7 @@ class Assistant:
         if len(msg) > conversation_context_length:
             msg = msg[-conversation_context_length:]
 
-        return (
+        title = (
             self.openai_client.responses.create(
                 model="gpt-5-mini",
                 instructions=AssistantPrompts.conversation_title(),
@@ -424,6 +424,13 @@ class Assistant:
                 store=False,
             ).output_text
         ).strip()
+
+        # If for some reason the AI returns a long title, truncates it
+        max_len = 100
+        if len(title) > max_len:
+            title = title[: max_len - 3] + "..."
+
+        return title
 
     def complete_tool_use(
         self,
