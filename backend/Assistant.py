@@ -9,7 +9,8 @@ from .AssistantTools import DocumentationTool, SearchTool
 
 
 class CompleteHistory(list):
-    """
+    """Modified list to store conversation history.
+
     This is a modified list that holds the complete history of the conversation.
 
     It stores all the information needed for both OpenAI and Gradio formats.
@@ -62,11 +63,16 @@ class CompleteHistory(list):
         self.extend(new_history)
 
     def format_check(self):
-        """
+        """Check history format is correct.
+
         Check that the history is in the correct format.
         Each message must be a dict with "display" and "ai" keys.
         The "display" key must have "role" and "content".
         The "ai" key must have either "role" and "content" or "type", "output", "call_id".
+
+        Raises:
+            TypeError: If a message is of the wrong type
+            ValueError: If a value is unexpected
         """
         for i, message in enumerate(self):
             # Check roughly in the right format
@@ -108,6 +114,13 @@ class CompleteHistory(list):
             )
 
     def add_message(self, role, content, metadata=None):
+        """Add message to history.
+
+        Args:
+            role: Role that generated the message.
+            content: Content of the message.
+            metadata: Additional metadata (default None).
+        """
         message = {
             "role": role,
             "content": content,
@@ -125,8 +138,10 @@ class CompleteHistory(list):
         )
 
     def start_thought(self, content=""):
-        """
-        Start a new assistant thought message.
+        """Start a new assistant thought message.
+
+        Args:
+            content: Initial content (default empty str)
         """
         self.append(
             {
@@ -146,8 +161,10 @@ class CompleteHistory(list):
         )
 
     def end_thought(self):
-        """
-        End the current assistant thought message.
+        """End the current assistant thought message.
+
+        Raises:
+            ValueError: If current history is empty or last message's display role is not 'assistant'
         """
         if len(self) == 0 or self[-1]["display"]["role"] != "assistant":
             msg = "No assistant message to end"
@@ -156,10 +173,11 @@ class CompleteHistory(list):
         self[-1]["display"]["metadata"]["status"] = "done"
 
     def update_last_message(self, delta_content):
-        """
-        Used for streaming updates to the last message.
-        """
+        """Used for streaming updates to the last message.
 
+        Raises:
+            ValueError: If current history is empty or last message's display role is not 'assistant'
+        """
         if len(self) == 0:
             msg = "No messages to update"
             raise ValueError(msg)
@@ -187,10 +205,15 @@ class CompleteHistory(list):
         )
 
     def complete_function_call(self, output, call_id):
-        """
-        Complete a function call by setting the previous message to done and adding the output message if provided.
-        """
+        """Complete a function call by setting the previous message to done and adding the output message if provided.
 
+        Args:
+            output: **TBC** output of the function called
+            call_id: **TBC** id of the function called
+
+        Raises:
+            ValueError: If current history is empty or last message's ai attribute is not a function call
+        """
         if len(self) == 0 or self[-1]["ai"].get("type") != "function_call":
             msg = "No function call to complete"
             raise ValueError(msg)
@@ -216,14 +239,18 @@ class CompleteHistory(list):
         )
 
     def undo(self, index):
-        """
-        Undo to a specific index in the history.
+        """Undo to a specific index in the history.
+
         This removes all messages after the specified index. Reverts to a previous state
 
         Args:
             index (int): The index to revert to. Must be a user message.
+
         Returns:
             str: The content of the last user message after undo.
+
+        Raises:
+            ValueError: If index is out of bounds
         """
         if index < 0 or index >= len(self):
             msg = f"Index out of range for undo: {index}"
@@ -236,13 +263,16 @@ class CompleteHistory(list):
         return last_message
 
     def edit(self, index, new_content):
-        """
-        Edit the content of a specific message in the history.
+        """Edit the content of a specific message in the history.
+
         Will only let you edit user message.
 
         Args:
             index (int): The index of the message to edit.
             new_content (str): The new content for the message.
+
+        Raises:
+            ValueError: If index is out of bounds or display role is not 'user'
         """
         if index < 0 or index >= len(self):
             msg = f"Index out of range for edit: {index}"
@@ -258,26 +288,32 @@ class CompleteHistory(list):
         del self[index + 1 :]
 
     def openai_format(self):
-        """
-        Convert to OpenAI message format.
+        """Convert to OpenAI message format.
+
         This means the only two formats are:
         messages with a "role" and "content"
         or function calls with "type", "output", "call_id"
+
+        Returns:
+            History converted to the OpenAI format
         """
         return [msg["ai"] for msg in self]
 
     def gradio_format(self):
-        """
-        Convert to Gradio message format.
+        """Convert to Gradio message format.
+
         All formats are the same, they must have atleast role and content, but could also have metadata and status.
+
+        Returns:
+            History converted to the Gradio format
         """
         return [msg["display"] for msg in self]
 
 
 class AssistantPrompts:
-    """
-    A collection of prompt templates for the Assistant.
-    All methods are static since they don't require instance state.
+    """A collection of prompt templates for the Assistant.
+
+    Note: All methods are static since they don't require instance state.
     """
 
     @staticmethod
@@ -336,6 +372,8 @@ You will be provided the conversation history including any function calls and o
 
     @staticmethod
     def act_system(general_info):
+        """
+        """
         return f"""
 You are a expert working at the New Zealand transport accident investigation commission. Your job is to assistant employees of TAIC with their queries. The day is {datetime.now(timezone.utc)}. You should respond as if you are a senior accident investigator/research who is speaking to your colleagues. Keep your responses short and to the point.
 
@@ -380,8 +418,17 @@ class Assistant:
         history=None,
         conversation_context_length=5,
     ) -> str:
-        """
-        Read the conversation history and provide a short title for the conversation.
+        """Read the conversation history and provide a short title for the conversation.
+
+        Args:
+            history: History of the conversation (default: None).
+            conversation_context_length: int representing the length of the conversation history to summarise.
+
+        Returns:
+            Short title that summarises the conversation as a str.
+
+        Raises:
+            ValueError: If history in empty
         """
         if history is None:
             history = []
@@ -393,7 +440,7 @@ class Assistant:
         msg = [
             m["display"]
             for m in history
-            if m["display"]["role"] in ["user", "assistant"]
+            if m["display"]["role"] in {"user", "assistant"}
             and m["display"].get("metadata") is None
         ]
 
@@ -421,8 +468,7 @@ class Assistant:
         function_call,
         chunk,
     ) -> Generator[tuple[CompleteHistory, list[dict], bool], None, None]:
-        """
-        Complete a tool use by executing the tool and returning the result.
+        """Complete a tool use by executing the tool and returning the result.
         """
         # Add function call to history
         history.add_function_call(chunk.item.to_dict())
@@ -450,8 +496,7 @@ class Assistant:
         response,
         history: CompleteHistory,
     ) -> Generator[tuple[CompleteHistory, list[dict], bool], None, None]:
-        """
-        Process a streamed response from OpenAI, handling both text and function calls.
+        """Process a streamed response from OpenAI, handling both text and function calls.
 
         Args:
             response: Streamed response from OpenAI API
@@ -512,8 +557,7 @@ class Assistant:
         self,
         history: CompleteHistory,
     ) -> Generator[tuple[CompleteHistory, list[dict]], None, None]:
-        """
-        Process user input and generate a response using the orient/plan/act loop.
+        """Process user input and generate a response using the orient/plan/act loop.
 
         This is a generator that yields the updated history after each step, allowing
         the UI to update in real-time as the assistant thinks and responds.
@@ -531,6 +575,10 @@ class Assistant:
 
         Returns:
             tuple: Final (history, gradio_formatted_history) when complete
+
+        Raises:
+            TypeError: If history is not an instance of CompleteHistory
+            ValueError: If history is empty
         """
         # Validate inputs
         if not isinstance(history, CompleteHistory):
