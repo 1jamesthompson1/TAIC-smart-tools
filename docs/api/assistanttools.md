@@ -7,3 +7,4 @@ The AssistantTools module defines tools that the AI assistant can use.
       show_root_heading: true
       show_source: true
       heading_level: 2
+      summary: true
