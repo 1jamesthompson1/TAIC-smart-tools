@@ -21,7 +21,6 @@ class CompleteHistory(list):
 
         **TODO**: Why args and not using normal argument?
 
-
         Raises:
             ValueError: If there is more than one argument.
             TypeError: If the argument is not a list.
