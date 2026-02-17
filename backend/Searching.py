@@ -359,7 +359,7 @@ class Searcher:
 
         Returns:
             results (DataFrame): Results as a Pandas DataFrame.
-            info: Additional info (eg, info messages, # of records found).
+            info (dict): Additional info (eg, info messages, # of records found).
             plots: Plots to display.
 
         Raises:

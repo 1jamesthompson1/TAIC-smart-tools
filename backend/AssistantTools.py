@@ -29,7 +29,11 @@ class Tool(ABC):
         """Execute the tool with given parameters and return result as string."""
 
     def to_openai_format(self) -> dict[str, Any]:
-        """Convert to OpenAI tool format."""
+        """Convert to OpenAI tool format.
+
+        Returns:
+            dict: Return the tool in OpenAI format.
+        """
         return {
             "type": "function",
             "name": self.name,
@@ -42,14 +46,25 @@ class SearchTool(Tool):
     """Tool for searching the knowledge base."""
 
     def __init__(self, searcher: Searcher):
+        """Constructor."""
         self.searcher = searcher
 
     @property
     def name(self) -> str:
+        """Get name of the tool.
+
+        Returns:
+            str: Name of the tool.
+        """
         return "search"
 
     @property
     def description(self) -> str:
+        """Get description of the tool.
+
+        Returns:
+            str: Description of the tool.
+        """
         return """Search for safety issues and recommendations from the New Zealand Transport Accident Investigation Commission. This function searches a vector database.
         Example usage:
         search(query="What are the common causes of aviation accidents?", type="vector", year_range=[2010, 2023], document_type=["safety_issue", "recommendation"], modes=["0"], agencies=["TAIC"])
@@ -61,6 +76,11 @@ class SearchTool(Tool):
 
     @property
     def parameters(self) -> dict[str, Any]:
+        """Get parameters of the tool.
+
+        Returns:
+            dict: Parameters of the tool.
+        """
         return {
             "type": "object",
             "properties": {

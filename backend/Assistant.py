@@ -17,6 +17,15 @@ class CompleteHistory(list):
     """
 
     def __init__(self, *args):
+        """Constructor.
+
+        **TODO**: Why args and not using normal argument?
+
+
+        Raises:
+            ValueError: If there is more than one argument.
+            TypeError: If the argument is not a list.
+        """
         super().__init__(*args)
 
         if len(args) != 1:
