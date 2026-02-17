@@ -85,6 +85,22 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         raise ValueError(msg)
 
     def compute_query_embeddings(self, query: str, *_args, **_kwargs) -> list[np.array]:
+        """Calculate embedding for given query string.
+
+        Wrapper for compute_source_embeddings.
+
+        Parameters:
+            query (str): Text to search.
+            *arg: Optional arguments (see below)
+            **kwargs: Keywords passed to the embedding function.
+                Supported keys:
+
+                - input_type (str)
+                - truncation (bool)
+
+        Returns:
+            Embedding of the query parameter.
+        """
         return self.compute_source_embeddings(query, input_type="query")
 
     def compute_source_embeddings(
@@ -93,6 +109,23 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         *_args,
         **kwargs,
     ) -> list[np.array]:
+        """Calculate embedding for given texts parameter.
+
+        Sanitize texts and return the embedding of the texts parameter.
+        Wrapper for generate_embeddings.
+
+        Parameters:
+            texts (TEXT):
+            *arg: Optional arguments (see below)
+            **kwargs: Keywords passed to the embedding function.
+                Supported keys:
+
+                - input_type (str)
+                - truncation (bool)
+
+        Returns:
+            Embedding of the texts parameter.
+        """
         texts = self.sanitize_input(texts)
         input_type = (
             kwargs.get("input_type") or "document"
@@ -165,7 +198,16 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
 
 
 class SearchParams(NamedTuple):
-    """Simple class to store search parameters."""
+    """Simple class to store search parameters.
+
+    Attributes:
+        query (str): Query
+        search_type: (str): Type of search (fts or vector)
+        year_range (tuple[int, int]): Year range for the search
+        document_type (list[str]): Document type
+        modes (list[str]): Modes to include
+        agencies (list[str]): Investigation agencies to include
+    """
 
     query: str
     search_type: Literal["fts", "vector"] | None
@@ -179,6 +221,15 @@ class Searcher:
     """Manage knowledge search functionality."""
 
     def __init__(self, db_uri, table_name):
+        """Constructor.
+
+        Parameters:
+            db_uri: URI of the database to search.
+            table_name: Name of the table to search.
+
+        Raises:
+            ValueError: If fails to open table.
+        """
         print("[bold]Creating searcher[/bold]")
         print(f"connecting to database at {db_uri}")
         self.vector_db = lancedb.connect(db_uri)
@@ -225,6 +276,19 @@ class Searcher:
         modes: list[str],
         agencies: list[str],
     ):
+        """Generate the where statement of the query.
+
+        **TODO:** Could a function, class method, or static method
+
+        Parameters:
+            year_range (tuple[int, int]): Year range for the search
+            document_type (list[str]): Document type
+            modes (list[str]): Modes to include
+            agencies (list[str]): Investigation agencies to include
+
+        Returns:
+            str: Where clause as text.
+        """
         where_statement = []
         if year_range:
             where_statement.append(
@@ -234,7 +298,7 @@ class Searcher:
             document_types = ", ".join(f'"{dt}"' for dt in document_type)
             where_statement.append(f"document_type in ({document_types})")
         if modes and len(modes) > 1:
-            where_statement.append(f"mode in {tuple([str(mode) for mode in modes])}")
+            where_statement.append(f"mode in {tuple(str(mode) for mode in modes)}")
         elif modes and len(modes) == 1:
             where_statement.append(f"mode = '{modes[0]!s}'")
         if agencies and len(agencies) > 1:
@@ -250,6 +314,16 @@ class Searcher:
         final_query: str | list[float] | None,
         where_statement: str,
     ):
+        """Print search query.
+
+        **TODO:** Could a function, class method, or static method
+
+        Parameters:
+            query (str): Query text.
+            final_query (str | list[float] | None): Final query as str or vector.
+            where_statement (str): Where clause as text.
+
+        """
         query_table = table.Table(
             title="🔍 Conducting search with 🔍",
             show_header=True,
@@ -276,6 +350,21 @@ class Searcher:
         limit: int = 150,
         relevance: float = 0,
     ):
+        """Run query.
+
+        Parameters:
+            params (SearchParams): Search parameters.
+            limit (int): Maximum number of results to return. Defaults to 150.
+            relevance (float): Relevance criteria. Defaults to 0.
+
+        Returns:
+            results (DataFrame): Results as a Pandas DataFrame.
+            info: Additional info (eg, info messages, # of records found).
+            plots: Plots to display.
+
+        Raises:
+            ValueError: If incorrect search type (not "fts" or "vector").
+        """
         info = {
             "info_message": "",
         }
@@ -298,7 +387,7 @@ class Searcher:
             final_query = None
             # Fix up error with LLM not providing the right parameters
             params = params._replace(search_type=None)
-        elif params.search_type in ["fts", "vector"]:
+        elif params.search_type in {"fts", "vector"}:
             final_query = params.query
         else:
             msg = f"type must be 'fts' or 'vector' not {params.search_type}"
@@ -379,10 +468,13 @@ class GraphMaker:
     """Supports the display of graphs summaries of search queries."""
 
     def __init__(self, context):
+        """Constructor."""
         self.context = context
 
     def add_visual_layout(self, fig):
         """Plot a graph.
+
+        **TODO:** Could a function, class method, or static method
 
         Returns:
             The generated graph.
