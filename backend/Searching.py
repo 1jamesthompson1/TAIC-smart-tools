@@ -269,16 +269,14 @@ class Searcher:
             msg = "agency column not found in table"
             raise ValueError(msg)
 
+    @staticmethod
     def __get_where_statement(
-        self,
         year_range: tuple[int, int],
         document_type: list[str],
         modes: list[str],
         agencies: list[str],
     ):
         """Generate the where statement of the query.
-
-        **TODO:** Could a function, class method, or static method
 
         Parameters:
             year_range (tuple[int, int]): Year range for the search
@@ -308,15 +306,13 @@ class Searcher:
 
         return " AND ".join(where_statement)
 
+    @staticmethod
     def __print_search_query(
-        self,
         query: str,
         final_query: str | list[float] | None,
         where_statement: str,
     ):
         """Print search query.
-
-        **TODO:** Could a function, class method, or static method
 
         Parameters:
             query (str): Query text.
@@ -383,7 +379,7 @@ class Searcher:
         )
 
         final_query: list[float] | str | None = None
-        if params.query == "" or params.query is None:
+        if not params.query or params.query is None:
             final_query = None
             # Fix up error with LLM not providing the right parameters
             params = params._replace(search_type=None)
@@ -471,10 +467,9 @@ class GraphMaker:
         """Constructor."""
         self.context = context
 
-    def add_visual_layout(self, fig):
+    @staticmethod
+    def add_visual_layout(fig):
         """Plot a graph.
-
-        **TODO:** Could a function, class method, or static method
 
         Returns:
             The generated graph.
