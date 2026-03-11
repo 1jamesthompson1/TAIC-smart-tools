@@ -1,4 +1,13 @@
+"""Module managing AI assistant interactions.
+
+Contains three classes:
+- the Assistant class, which provides manages the interface with AI
+- the AssistantPrompts class, which contains the prompts
+- the CompleteHistory class, which manages the history.
+"""
+
 import json
+from collections import UserList
 from collections.abc import Generator
 from datetime import datetime, timezone
 
@@ -8,7 +17,7 @@ from rich import print  # noqa: A004
 from .AssistantTools import DocumentationTool, SearchTool
 
 
-class CompleteHistory(list):
+class CompleteHistory(UserList):
     """Modified list to store conversation history.
 
     This is a modified list that holds the complete history of the conversation.
@@ -43,12 +52,16 @@ class CompleteHistory(list):
             self.format_check()
         except ValueError as e:
             print(f"[red]Warning: History format issue on init: {e}[/red]")
-            self.format()
+            self.fix_format()
 
-    def format(self):
-        """
+    def fix_format(self):
+        """Fix history loaded from older version of the app.
+
         Pre to 0.3.0 the message was justa  list of dict with "role", "content" and optional "metadata".
         Need to expand this out into the full format with "display" and "ai" keys. TO do this just copy the message to both and only have role and content for the ai key.
+
+        Raises:
+            ValueError: If there it cannot correctly parse expected history format.
         """
         new_history = []
 
