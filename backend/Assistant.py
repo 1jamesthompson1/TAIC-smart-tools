@@ -57,8 +57,8 @@ class CompleteHistory(UserList):
     def fix_format(self):
         """Fix history loaded from older version of the app.
 
-        Pre to 0.3.0 the message was justa  list of dict with "role", "content" and optional "metadata".
-        Need to expand this out into the full format with "display" and "ai" keys. TO do this just copy the message to both and only have role and content for the ai key.
+        Pre to 0.3.0 the message was just a list of dict with "role", "content" and optional "metadata".
+        Need to expand this out into the full format with "display" and "ai" keys. To do this just copy the message to both and only have role and content for the ai key.
 
         Raises:
             ValueError: If there it cannot correctly parse expected history format.
@@ -339,14 +339,20 @@ class AssistantPrompts:
 
     @staticmethod
     def conversation_title():
+        """
+        Returns AI prompt to generate a short title that summarises the topic of the conversation
+        """
         return """
-You are part of a chatbot assistant at the Transport Accident Investigation Commission that help users add titles to their conversation. You will receive the conversation and you are too response with a 5 word summary of the conversation.
-Provide a title that will best help the user identify what conversation it was.
+You are part of a chatbot assistant at the Transport Accident Investigation Commission. You help users add titles to their conversation. You will receive the conversation and you are to respond with a 5 word summary of the conversation.
+Provide a title that will best help the user recall what the conversation was.
 Just respond with the title and nothing else.
         """
 
     @staticmethod
     def general_info(columns, rows, last_updated):
+        """
+        Returns general context of the user's query
+        """
         return f"""
 Below is general information to help you contextualise the user's query.
 
@@ -382,6 +388,9 @@ issues.
 
     @staticmethod
     def orient_plan_system(general_info):
+        """
+        Returns AI prompt to orient and plan the initial orient and plan analysis
+        """
         return f"""
 You are a expert working at the New Zealand transport accident investigation commission. Your job is to assistant employees of TAIC with their queries. The day is {datetime.now(timezone.utc)}. You should respond as if you are a senior accident investigator/research who is speaking to your colleagues.
 
@@ -394,6 +403,7 @@ You will be provided the conversation history including any function calls and o
     @staticmethod
     def act_system(general_info):
         """
+        Returns AI prompt to generate the response to the prompt
         """
         return f"""
 You are a expert working at the New Zealand transport accident investigation commission. Your job is to assistant employees of TAIC with their queries. The day is {datetime.now(timezone.utc)}. You should respond as if you are a senior accident investigator/research who is speaking to your colleagues. Keep your responses short and to the point.
@@ -408,6 +418,10 @@ If you choose to respond to the user, ensure you provide a concise and accurate 
 
 
 class Assistant:
+    """
+    Assistant class handles the chat conversation and AI calls.
+    """
+
     def __init__(
         self,
         searcher,
@@ -459,7 +473,7 @@ class Assistant:
 
         # Clear history to only include the last 5 user or assistant messages, no system messages or tool calls
         msg = [
-            m["display"]
+            m["display"]["role"] + ": " + m["display"]["content"]
             for m in history
             if m["display"]["role"] in {"user", "assistant"}
             and m["display"].get("metadata") is None
@@ -468,20 +482,21 @@ class Assistant:
         if len(msg) > conversation_context_length:
             msg = msg[-conversation_context_length:]
 
-        return (
-            self.openai_client.chat.completions.create(
-                model="gpt-4.1-nano",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": AssistantPrompts.conversation_title(),
-                    },
-                    *msg,
-                ],
-            )
-            .choices[0]
-            .message.content
+        title = (
+            self.openai_client.responses.create(
+                model="gpt-5-mini",
+                instructions=AssistantPrompts.conversation_title(),
+                input=f"Here is the last {conversation_context_length} messages from the conversation history: {msg}. Can you please provide a title to help?",
+                store=False,
+            ).output_text
         ).strip()
+
+        # If for some reason the AI returns a long title, truncates it
+        max_len = 100
+        if len(title) > max_len:
+            title = title[: max_len - 3] + "..."
+
+        return title
 
     def complete_tool_use(
         self,
