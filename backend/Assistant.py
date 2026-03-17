@@ -339,9 +339,7 @@ class AssistantPrompts:
 
     @staticmethod
     def conversation_title():
-        """
-        Returns AI prompt to generate a short title that summarises the topic of the conversation
-        """
+        """Returns AI prompt to generate a short title that summarises the topic of the conversation."""
         return """
 You are part of a chatbot assistant at the Transport Accident Investigation Commission. You help users add titles to their conversation. You will receive the conversation and you are to respond with a 5 word summary of the conversation.
 Provide a title that will best help the user recall what the conversation was.
@@ -350,9 +348,7 @@ Just respond with the title and nothing else.
 
     @staticmethod
     def general_info(columns, rows, last_updated):
-        """
-        Returns general context of the user's query
-        """
+        """Returns general context of the user's query."""
         return f"""
 Below is general information to help you contextualise the user's query.
 
@@ -388,9 +384,7 @@ issues.
 
     @staticmethod
     def orient_plan_system(general_info):
-        """
-        Returns AI prompt to orient and plan the initial orient and plan analysis
-        """
+        """Returns AI prompt to orient and plan the initial orient and plan analysis."""
         return f"""
 You are a expert working at the New Zealand transport accident investigation commission. Your job is to assistant employees of TAIC with their queries. The day is {datetime.now(timezone.utc)}. You should respond as if you are a senior accident investigator/research who is speaking to your colleagues.
 
@@ -402,9 +396,7 @@ You will be provided the conversation history including any function calls and o
 
     @staticmethod
     def act_system(general_info):
-        """
-        Returns AI prompt to generate the response to the prompt
-        """
+        """Returns AI prompt to generate the response to the prompt."""
         return f"""
 You are a expert working at the New Zealand transport accident investigation commission. Your job is to assistant employees of TAIC with their queries. The day is {datetime.now(timezone.utc)}. You should respond as if you are a senior accident investigator/research who is speaking to your colleagues. Keep your responses short and to the point.
 
@@ -418,9 +410,7 @@ If you choose to respond to the user, ensure you provide a concise and accurate 
 
 
 class Assistant:
-    """
-    Assistant class handles the chat conversation and AI calls.
-    """
+    """Assistant class handles the chat conversation and AI calls."""
 
     def __init__(
         self,
@@ -428,6 +418,7 @@ class Assistant:
         openai_api_key,
         openai_endpoint=None,
     ):
+        """Constructor."""
         print("[bold]Creating Chatbot[/bold]")
         self.searcher = searcher
         if openai_endpoint:
@@ -505,6 +496,9 @@ class Assistant:
         chunk,
     ) -> Generator[tuple[CompleteHistory, list[dict], bool], None, None]:
         """Complete a tool use by executing the tool and returning the result.
+
+        Yields:
+            tuple: (updated_history, gradio_formatted_history, has_function_calls)
         """
         # Add function call to history
         history.add_function_call(chunk.item.to_dict())
