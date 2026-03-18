@@ -18,7 +18,7 @@ from .AssistantTools import DocumentationTool, SearchTool
 
 # Reason for noqa:
 # Breaks expected behaviour when calling json.dump is not recognises as a JSON serializable object.
-class CompleteHistory(list):    # noqa: FURB189
+class CompleteHistory(list):  # noqa: FURB189
     """Modified list to store conversation history.
 
     This is a modified list that holds the complete history of the conversation.
@@ -212,6 +212,11 @@ class CompleteHistory(list):    # noqa: FURB189
         self[-1]["ai"]["content"] += delta_content
 
     def add_function_call(self, ai_call):
+        """Add a function call requested by the assistant.
+
+        Args:
+            ai_call: function call details
+        """
         self.append(
             {
                 "display": {
