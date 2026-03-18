@@ -7,7 +7,6 @@ Contains three classes:
 """
 
 import json
-from collections import UserList
 from collections.abc import Generator
 from datetime import datetime, timezone
 
@@ -17,7 +16,9 @@ from rich import print  # noqa: A004
 from .AssistantTools import DocumentationTool, SearchTool
 
 
-class CompleteHistory(UserList):
+# Reason for noqa:
+# Breaks expected behaviour when calling json.dump is not recognises as a JSON serializable object.
+class CompleteHistory(list):    # noqa: FURB189
     """Modified list to store conversation history.
 
     This is a modified list that holds the complete history of the conversation.
@@ -542,9 +543,6 @@ class Assistant:
 
         Yields:
             tuple: (updated_history, gradio_formatted_history, has_function_calls)
-
-        Returns:
-            bool: True if any function calls were made (indicating we need another loop iteration)
         """
         function_calls = {}
         has_function_calls = False
@@ -589,8 +587,6 @@ class Assistant:
             ):
                 yield history, history.gradio_format(), has_function_calls
 
-        return has_function_calls
-
     def process_input(
         self,
         history: CompleteHistory,
@@ -610,9 +606,6 @@ class Assistant:
 
         Yields:
             tuple: (updated_history, gradio_formatted_history) after each update
-
-        Returns:
-            tuple: Final (history, gradio_formatted_history) when complete
 
         Raises:
             TypeError: If history is not an instance of CompleteHistory
@@ -688,5 +681,3 @@ class Assistant:
             # Otherwise, we're done - assistant has provided final response
             if not has_function_calls:
                 break
-
-        return history, history.gradio_format() # To remove and should satisfy the yield?
