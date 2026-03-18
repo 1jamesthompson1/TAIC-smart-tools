@@ -378,8 +378,7 @@ def delete_conversation(  # noqa: PLR0913
     current_conv_title: gr.State,
     to_delete: str | None,
 ):
-    """
-    Delete a conversation and clear current conversation state if needed.
+    """Delete a conversation and clear current conversation state if needed.
     Will ask the user for confirmation before calling this function.
     """
     username = request.username
@@ -546,8 +545,7 @@ def delete_search(
     request: gr.Request,
     search_id_to_delete: gr.State,
 ):
-    """
-    Delete a search.
+    """Delete a search.
     Will ask the user for confirmation before calling this function.
     """
     username = request.username
@@ -577,9 +575,7 @@ def create_complete_search_params(
     modes: list,
     agencies: list,
 ):
-    """
-    Create complete SearchParams by filling in defaults for any missing fields.
-    """
+    """Create complete SearchParams by filling in defaults for any missing fields."""
     search_type = (
         "none"
         if (query == "" or query is None)
@@ -617,9 +613,7 @@ def format_search_results(  # noqa: PLR0913
     search_start_time: datetime,
     username: str,
 ):
-    """
-    Format the search results for display and download.
-    """
+    """Format the search results for display and download."""
     results_to_download = results.copy()
     # Format the results to be displayed in the dataframe
     if not results.empty:
@@ -763,9 +757,7 @@ def perform_search(  # noqa: PLR0913
 
 
 def update_download_button(download_dict: dict):
-    """
-    Update the download button to to point to a new temporary file that is the results ready to be downloaded.
-    """
+    """Update the download button to to point to a new temporary file that is the results ready to be downloaded."""
     if download_dict["results"] is None or download_dict["results"].empty:
         return gr.DownloadButton(visible=False)
     save_name = f"{download_dict['settings'].query[: min(20, len(download_dict['settings'].query))]}_{download_dict['search_start_time'].strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
