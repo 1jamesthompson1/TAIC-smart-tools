@@ -4,8 +4,12 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-logging.basicConfig(format="%(source)s - %(message)s", level=logging.DEBUG)
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.DEBUG,
+)
 logger = logging.getLogger(__name__)
 
 
@@ -25,7 +29,7 @@ def run_command(cmd, capture_output):
         result = subprocess.run(cmd, shell=shell_mode, check=True)  # noqa: S603
         return result.returncode  # noqa: TRY300
     except subprocess.CalledProcessError as e:
-        logger.debug("Error running command", extra={"source": e.stderr})
+        logger.debug("Error running command: %s", e.stderr)
         sys.exit(1)
 
 
@@ -56,7 +60,7 @@ def main():
         "--local-dir",
         type=str,
         help="Local directory to save the downloaded files",
-        default="./vectordb",
+        default="./workbench/prod-vectordb/",
     )
     parser.add_argument("--log-level", type=str, help="Logging level", default="INFO")
 
@@ -66,7 +70,7 @@ def main():
     expiry = (datetime.now(timezone.utc) + timedelta(days=1)).strftime(
         "%Y-%m-%dT%H:%M:%SZ",
     )
-    logger.debug("Using SAS expiry time: %(expiry)s", extra={"expiry": expiry})
+    logger.debug("Using SAS expiry time: %s", expiry)
     # Generate SAS token command
     sas_cmd = [
         "az",
@@ -86,8 +90,8 @@ def main():
     ]
 
     logger.debug(
-        "Generating SAS token...\nWith command:\n%(command)s",
-        extra={"command": " ".join(sas_cmd)},
+        "Generating SAS token...\nWith command:\n%s",
+        " ".join(sas_cmd),
     )
 
     sas_token = run_command(sas_cmd, capture_output=True)
@@ -97,7 +101,10 @@ def main():
 
     blob_url = f"https://{args.account_name}.blob.core.windows.net/{args.container_name}/{args.blob_path}?{sas_token}"
 
-    logger.debug("Blob URL with SAS token:\n%(url)s", extra={"url": blob_url})
+    logger.debug("Blob URL with SAS token:\n%s", blob_url)
+
+    # make the local directory if it doesn't exist
+    Path(args.local_dir).mkdir(parents=True, exist_ok=True)
 
     azcopy_cmd = [
         "azcopy",
