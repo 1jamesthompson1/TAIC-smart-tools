@@ -20,39 +20,46 @@
   }
 
   h1, h2, h3 {
-    color: var(--taic-secondary); /* TAIC secondary color */
+    color: var(--taic-secondary);
     margin-top: 25px;
   }
 
-  /* Top banner */
-  .top-banner {
-    background: linear-gradient(135deg, rgba(230, 220, 161, 0.2), rgba(255, 255, 255, 0.06));
-    border: 1px solid rgba(230, 220, 161, 0.45);
-    padding: 16px 20px;
+  .full-docs-banner {
+    background: linear-gradient(135deg, rgba(46, 103, 156, 0.25), rgba(230, 220, 161, 0.15));
+    border: 2px solid var(--taic-primary);
+    padding: 24px 28px;
     border-radius: 14px;
     margin-bottom: 24px;
+    text-align: center;
   }
 
-  .top-banner h2 {
+  .full-docs-banner h2 {
     margin: 0 0 8px 0;
-    color: var(--taic-secondary);
+    color: var(--taic-primary);
   }
 
-  .top-banner p {
-    margin: 0 0 10px 0;
+  .full-docs-banner p {
+    margin: 0 0 14px 0;
+    font-size: 15px;
   }
 
-  .top-banner .banner-links a {
+  .full-docs-link {
     display: inline-block;
-    margin-right: 12px;
-    padding: 6px 10px;
+    padding: 10px 24px;
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    font-size: 14px;
+    background: var(--taic-primary);
+    color: #fff !important;
+    font-weight: 600;
+    font-size: 15px;
+    text-decoration: none;
+    border: none;
   }
 
-  /* Table of Contents */
+  .full-docs-link:hover {
+    opacity: 0.9;
+    text-decoration: none;
+  }
+
   .toc {
     background: rgba(230, 220, 161, 0.15);
     border: 1px solid rgba(230, 220, 161, 0.4);
@@ -76,7 +83,6 @@
     text-decoration: underline;
   }
 
-  /* Section containers */
   .section-box {
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -85,9 +91,8 @@
     margin-bottom: 30px;
   }
 
-  /* Links inside text */
   a {
-    color: var(--taic-primary); /* TAIC primary */
+    color: var(--taic-primary);
     font-weight: bold;
     text-decoration: none;
   }
@@ -99,31 +104,14 @@
   ul li {
     margin-bottom: 6px;
   }
-
 </style>
 
 <h1 id="top">TAIC Smart Tools FAQs</h1>
 
-<div class="top-banner">
-  <h2>Need more help?</h2>
-  <p>Start with the user guide. Developer docs are available on the documentation site.</p>
-  <div class="banner-links">
-    <a href="/documentation/user-guide/overview/">User guide</a>
-  </div>
-</div>
-
-<p>
-Below you'll find concise, FAQ-style documentation for the smart tools platform.
-</p>
-<br>
-
-<div class="toc">
-  <strong style="font-size: 18px;">Table of Contents</strong>
-  <ul>
-    <li><a href="#underlying-db">Underlying database</a></li>
-    <li><a href="#smart-assistant">Smart Assistant</a></li>
-    <li><a href="#smart-search">Smart Search</a></li>
-  </ul>
+<div class="full-docs-banner">
+  <h3>📚 Full documentation available at separate site </h3> <a class="full-docs-link" href="/documentation/user-guide/overview/">Open Documentation Site →</a>
+  <br>
+  <h3>Quick guide below:</h3>
 </div>
 
 <div class="section-box">
@@ -135,7 +123,7 @@ Below you'll find concise, FAQ-style documentation for the smart tools platform.
   <h3>Document types</h3>
   In the database there are four types of 'documents' that you or the Smart Assistant can search on:
   <ul>
-  <li><strong>section</strong> - Each report is divided into numbered sections where possible; otherwise it is split into paragraph-sized chunks of text.</li>
+  <li><strong>section</strong> - Each report is divided into paragraph-sized chunks of text.</li>
   <li><strong>summary</strong> - For ATSB and TAIC there are investigation summaries on the public webpages. These are normally similar to, but not always identical to, the executive summaries. <em>Warning: TSB has no summaries in the dataset</em></li>
   <li><strong>safety issue</strong> - For ATSB, safety issues are scraped directly from the website. For TSB and TAIC they are extracted from the report and may not be identical. In cases where reports don't list safety issues and the AI engine determines a safety issue is present (according to the current TAIC definition), it will infer one.</li>
   <li><strong>recommendation</strong> - All recommendations are either extracted verbatim from the reports or scraped from webpages.</li>
@@ -215,12 +203,6 @@ Below you'll find concise, FAQ-style documentation for the smart tools platform.
   <p>
     You can also do a regular text search by enclosing your search terms in double quotes. For example: "fuel starvation". This will return all results that contain the text "fuel starvation" regardless of the meaning.
   </p>
-</div>
-
-<div class="section-box" style="text-align: center;">
-  <h2>More information</h2>
-  <p>Explore the user guide for step-by-step help. Developer docs live on the documentation site.</p>
-  <a href="/documentation/user-guide/overview/" style="display: inline-block; margin-top: 6px; padding: 10px 16px; border-radius: 10px; background: rgba(230, 220, 161, 0.25); border: 1px solid rgba(230, 220, 161, 0.5);">More info here</a>
 </div>
 
 </div>

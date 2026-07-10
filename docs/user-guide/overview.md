@@ -28,6 +28,12 @@ The Knowledge Search tool provides:
 
 [Learn more about Knowledge Search →](search.md)
 
+### Underlying Database
+
+Both tools search across a database of investigation reports from TAIC, ATSB, and TSB — including report sections, safety issues, recommendations, and summaries.
+
+[Learn about the database →](database.md)
+
 ## Getting Started
 
 1. **Access the Application**: Navigate to your organization's deployment URL

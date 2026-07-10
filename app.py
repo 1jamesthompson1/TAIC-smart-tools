@@ -1498,7 +1498,7 @@ with gr.Blocks(
         gr.Markdown(f"**App version:** {Version.CURRENT_VERSION}")
         gr.Markdown("Please login to continue:")
         gr.Button("Login", link="/login")
-        gr.Markdown("[Public documentation here](/documentation)")
+        gr.Button("📚 Documentation", link="/documentation", variant="primary")
 
     footer = get_footer()
 

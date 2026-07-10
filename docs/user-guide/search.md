@@ -23,6 +23,8 @@ View search results through:
 
 - Result tables with key metadata
 - Visualizations showing patterns across results
+- Distribution of document types and years to identify trends
+- Downloadable graphs (click the camera icon in the top right of each graph)
 - Export capabilities for further analysis
 
 ## Using Knowledge Search
@@ -82,6 +84,10 @@ Filter by transport sector:
 - Rail
 - Marine
 
+### Relevance Filters
+
+When performing a smart search, results are ranked by relevance (1 is most relevant, 0 is least relevant). The default relevance filter is 0.2 to filter out irrelevant results. You can adjust this if you're not getting enough results or want more. The filter can be sensitive, so try adjusting in increments of 0.05.
+
 ### Understanding Results
 
 Each result shows:
@@ -95,12 +101,22 @@ Each result shows:
 
 ### Analytics
 
-Click "Show Analytics" to see:
+Click the **"Results graph"** dropdown just above the results to view:
 
 - Distribution of results by year
 - Breakdown by transport mode
 - Agency representation
 - Document type distribution
+
+Each graph can be downloaded by clicking the camera icon in the top right of the graph.
+
+### Post-Search Filtering
+
+After performing a search, you can further refine your results using post-search filtering. In the search bar at the top right of the results table, type words to perform an exact text filter on the results already returned by the smart search. This is useful for narrowing down results to specific topics or keywords.
+
+### Regular Text Search
+
+You can also do a regular text search by enclosing your search terms in double quotes. For example: `"fuel starvation"`. This will return all results that contain that exact text regardless of the meaning.
 
 ### Exporting Results
 

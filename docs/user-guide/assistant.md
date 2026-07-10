@@ -58,6 +58,14 @@ What safety recommendations have been made regarding fatigue in rail operations?
 - **Conversation History**: View and resume previous conversations
 - **Delete Conversations**: Remove conversations you no longer need
 
+### Editing and Undoing
+
+If you ask the Smart Assistant a question and are not happy with the answer, you can either:
+
+- Click the **Undo** button (the small circle button on the bottom left of the last Assistant response) to edit the previously sent question and refine it to be more specific.
+- Click the **Edit** button (small pencil icon on the bottom right of your sent message) to modify a previous message. Press the checkmark after editing to save the changes. This will remove the response to the original message and generate a new response.
+- Ask a follow-up question to clarify what you wanted.
+
 ### Best Practices
 
 !!! tip "Getting Better Results"
