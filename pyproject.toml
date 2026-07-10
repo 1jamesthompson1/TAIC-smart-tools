@@ -38,6 +38,7 @@ dev = [
     "mkdocs-material>=9.7.1",
     "mkdocstrings[python]>=1.0.3",
     "watchdog>=6.0.0",
+    "mkdocs-macros-plugin>=1.0.0",
     "matplotlib>=3.10.8",
     "tiktoken>=0.12.0",
 ]
