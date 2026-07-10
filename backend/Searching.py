@@ -10,6 +10,7 @@ import lancedb
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as plotly
 from azure.ai.inference import EmbeddingsClient
 from azure.core.credentials import AzureKeyCredential
 from lancedb.embeddings.base import TextEmbeddingFunction
@@ -28,8 +29,8 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
     - AZURE_AI_ENDPOINT: The endpoint URL for the AzureAI service.
     - AZURE_AI_API_KEY: The API key for the AzureAI service.
 
-    Parameters:
-        name (str): The name of the model you want to use from the model catalog.
+    Attributes:
+        name: The name of the model you want to use from the model catalog.
 
     Examples:
         Usage example:
@@ -60,13 +61,13 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
     name: str
     client: ClassVar = None
 
-    def ndims(self):
+    def ndims(self) -> int:
         """Return the number of dimensions used.
 
         Checks the embedding model used and returns the number of dimensions.
 
         Returns:
-            str: Name of the embedding model being used.
+            int: Number of dimensions for the embedding model.
 
         Raises:
             ValueError: If unknown model.
@@ -90,13 +91,7 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         Wrapper for compute_source_embeddings.
 
         Parameters:
-            query (str): Text to search.
-            *arg: Optional arguments (see below)
-            **kwargs: Keywords passed to the embedding function.
-                Supported keys:
-
-                - input_type (str)
-                - truncation (bool)
+            query: Text to search.
 
         Returns:
             Embedding of the query parameter.
@@ -115,13 +110,7 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         Wrapper for generate_embeddings.
 
         Parameters:
-            texts (TEXT):
-            *arg: Optional arguments (see below)
-            **kwargs: Keywords passed to the embedding function.
-                Supported keys:
-
-                - input_type (str)
-                - truncation (bool)
+            texts: The texts to embed.
 
         Returns:
             Embedding of the texts parameter.
@@ -141,13 +130,7 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         """Get the embeddings for the given texts.
 
         Parameters:
-            texts (list[str] or np.ndarray[str]): The texts to embed
-            *arg: Optional arguments (see below)
-            **kwargs: Keywords passed to the embedding function.
-                Supported keys:
-
-                - input_type (str)
-                - truncation (bool)
+            texts: The texts to embed.
 
         Returns:
             list: Embedding
@@ -220,7 +203,7 @@ class SearchParams(NamedTuple):
 class Searcher:
     """Manage knowledge search functionality."""
 
-    def __init__(self, db_uri, table_name):
+    def __init__(self, db_uri: str, table_name: str):
         """Constructor.
 
         Parameters:
@@ -275,7 +258,7 @@ class Searcher:
         document_type: list[str],
         modes: list[str],
         agencies: list[str],
-    ):
+    ) -> str:
         """Generate the where statement of the query.
 
         Parameters:
@@ -345,7 +328,7 @@ class Searcher:
         params: SearchParams,
         limit: int = 150,
         relevance: float = 0,
-    ):
+    ) -> tuple[pd.DataFrame, dict, list | None]:
         """Run query.
 
         Parameters:
@@ -468,7 +451,7 @@ class GraphMaker:
         self.context = context
 
     @staticmethod
-    def add_visual_layout(fig):
+    def add_visual_layout(fig: plotly.Figure) -> plotly.Figure:
         """Plot a graph.
 
         Returns:
@@ -489,7 +472,7 @@ class GraphMaker:
 
         return fig
 
-    def get_document_type_pie_chart(self):
+    def get_document_type_pie_chart(self) -> plotly.Figure:
         """Plot pie chart for 'document type'.
 
         Returns:
@@ -506,7 +489,7 @@ class GraphMaker:
 
         return self.add_visual_layout(fig)
 
-    def get_mode_pie_chart(self):
+    def get_mode_pie_chart(self) -> plotly.Figure:
         """Plot pie chart for 'mode'.
 
         Returns:
@@ -523,7 +506,7 @@ class GraphMaker:
 
         return self.add_visual_layout(fig)
 
-    def get_year_histogram(self):
+    def get_year_histogram(self) -> plotly.Figure:
         """Plot histogram per 'year'.
 
         Returns:
@@ -537,7 +520,7 @@ class GraphMaker:
         )
         return self.add_visual_layout(fig)
 
-    def get_most_common_event_types(self):
+    def get_most_common_event_types(self) -> plotly.Figure:
         """Plot pie chart for most common event types.
 
         Returns:
@@ -569,7 +552,7 @@ class GraphMaker:
 
         return self.add_visual_layout(fig)
 
-    def get_agency_pie_chart(self):
+    def get_agency_pie_chart(self) -> plotly.Figure:
         """Plot pie chart for 'agency'.
 
         Returns:

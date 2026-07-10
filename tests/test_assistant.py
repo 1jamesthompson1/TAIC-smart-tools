@@ -1,3 +1,5 @@
+"""Tests for the Assistant module."""
+
 import os
 from unittest.mock import Mock, patch
 

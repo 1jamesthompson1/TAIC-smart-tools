@@ -15,11 +15,7 @@ Tools that the AI assistant can use to search, read reports, and perform reasoni
 ### [Searching](searching.md)
 Vector-based semantic search functionality and analytics.
 
-### [Storage](storage.md)
-Azure Storage interfaces for conversations and search sessions.
-
-### [Version](version.md)
-Version management and compatibility checking.
+### [Utilities](utilities.md)
 
 ## Using This Reference
 

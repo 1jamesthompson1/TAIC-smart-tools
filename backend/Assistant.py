@@ -26,24 +26,18 @@ class CompleteHistory(list):  # noqa: FURB189
     It stores all the information needed for both OpenAI and Gradio formats.
     """
 
-    def __init__(self, *args):
+    def __init__(self, messages: list):
         """Constructor.
 
-        **TODO**: Why args and not using normal argument?
+        Args:
+            messages: List of conversation messages to initialize the history with.
 
         Raises:
-            ValueError: If there is more than one argument.
-            TypeError: If the argument is not a list.
+            TypeError: If messages is not a list.
         """
-        super().__init__(*args)
+        super().__init__(messages)
 
-        if len(args) != 1:
-            msg = "CompleteHistory must be initialized with a single iterable argument"
-            raise ValueError(
-                msg,
-            )
-
-        if not isinstance(args[0], list):
+        if not isinstance(messages, list):
             msg = "CompleteHistory must be initialized with a list"
             raise TypeError(
                 msg,
@@ -135,7 +129,7 @@ class CompleteHistory(list):  # noqa: FURB189
                 msg,
             )
 
-    def add_message(self, role, content, metadata=None):
+    def add_message(self, role: str, content: str, metadata: str | None = None):
         """Add message to history.
 
         Args:
@@ -159,7 +153,7 @@ class CompleteHistory(list):  # noqa: FURB189
             },
         )
 
-    def start_thought(self, content=""):
+    def start_thought(self, content: str = ""):
         """Start a new assistant thought message.
 
         Args:
@@ -211,7 +205,7 @@ class CompleteHistory(list):  # noqa: FURB189
         self[-1]["display"]["content"] += delta_content
         self[-1]["ai"]["content"] += delta_content
 
-    def add_function_call(self, ai_call):
+    def add_function_call(self, ai_call: dict):
         """Add a function call requested by the assistant.
 
         Args:
@@ -231,12 +225,12 @@ class CompleteHistory(list):  # noqa: FURB189
             },
         )
 
-    def complete_function_call(self, output, call_id):
+    def complete_function_call(self, output: str | None, call_id: str):
         """Complete a function call by setting the previous message to done and adding the output message if provided.
 
         Args:
-            output: **TBC** output of the function called
-            call_id: **TBC** id of the function called
+            output: output of the function called
+            call_id: id of the function called where the id is linked to the function call in the history
 
         Raises:
             ValueError: If current history is empty or last message's ai attribute is not a function call
@@ -265,13 +259,13 @@ class CompleteHistory(list):  # noqa: FURB189
             },
         )
 
-    def undo(self, index):
+    def undo(self, index: int) -> str:
         """Undo to a specific index in the history.
 
         This removes all messages after the specified index. Reverts to a previous state
 
         Args:
-            index (int): The index to revert to. Must be a user message.
+            index: The index to revert to. Must be a user message.
 
         Returns:
             str: The content of the last user message after undo.
@@ -284,6 +278,10 @@ class CompleteHistory(list):  # noqa: FURB189
             raise ValueError(msg)
 
         last_message = self[index]["display"]["content"]
+
+        if self[index]["display"]["role"] != "user":
+            msg = "Can only undo to user messages"
+            raise ValueError(msg)
 
         del self[index:]
 
@@ -314,7 +312,7 @@ class CompleteHistory(list):  # noqa: FURB189
 
         del self[index + 1 :]
 
-    def openai_format(self):
+    def openai_format(self) -> list[dict]:
         """Convert to OpenAI message format.
 
         This means the only two formats are:
@@ -326,7 +324,7 @@ class CompleteHistory(list):  # noqa: FURB189
         """
         return [msg["ai"] for msg in self]
 
-    def gradio_format(self):
+    def gradio_format(self) -> list[dict]:
         """Convert to Gradio message format.
 
         All formats are the same, they must have atleast role and content, but could also have metadata and status.
@@ -455,8 +453,8 @@ class Assistant:
 
     def provide_conversation_title(
         self,
-        history=None,
-        conversation_context_length=5,
+        history: list | None = None,
+        conversation_context_length: int = 5,
     ) -> str:
         """Read the conversation history and provide a short title for the conversation.
 
@@ -537,7 +535,7 @@ class Assistant:
 
     def process_streamed_input(
         self,
-        response,
+        response: openai.Stream,
         history: CompleteHistory,
     ) -> Generator[tuple[CompleteHistory, list[dict], bool], None, None]:
         """Process a streamed response from OpenAI, handling both text and function calls.

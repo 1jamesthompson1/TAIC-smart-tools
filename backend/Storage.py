@@ -486,7 +486,7 @@ class KnowledgeSearchMetadataStore:
     Works alongside KnowledgeSearchBlobStore for complete search log management.
     """
 
-    def __init__(self, table_client, blob_store: KnowledgeSearchBlobStore):
+    def __init__(self, table_client: TableClient, blob_store: KnowledgeSearchBlobStore):
         """Initialize with existing table client and blob store.
 
         Args:
@@ -496,7 +496,7 @@ class KnowledgeSearchMetadataStore:
         self.table_client = table_client
         self.blob_store = blob_store
 
-    def store_search_log(  # noqa: PLR0913
+    def store_search_log(  # noqa: PLR0913, PLR0917
         self,
         username: str,
         search_id: str,
@@ -511,8 +511,6 @@ class KnowledgeSearchMetadataStore:
     ) -> bool:
         """Store knowledge search: blob for detailed data, Table Storage for metadata.
 
-        **TODO**: Understand how it is used (app.py). Finish documentation.
-
         Args:
             username (str): Username of the search owner
             search_id (str): Unique identifier for the search
@@ -520,9 +518,9 @@ class KnowledgeSearchMetadataStore:
             relevance (float): Relevance score for the search
             results_info (dict): Information about search results (count, relevance, etc.)
             results (pd.DataFrame): DataFrame with detailed search results
-            plots (dict): 
-            download_dict (dict): 
-            message (str): 
+            plots (dict): Plotly figures for search analytics
+            download_dict (dict): Data for download/export
+            message (str): Search result message
             error_info (dict): Error information if search failed
 
         Returns:

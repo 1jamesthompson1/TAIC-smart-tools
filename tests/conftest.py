@@ -1,3 +1,5 @@
+"""Test fixtures and configuration for the TAIC Smart Tools test suite."""
+
 import os
 import tempfile
 from unittest.mock import Mock, patch
@@ -19,7 +21,11 @@ os.environ["NO_LOGS"] = "false"  # Ensure logging is enabled for tests
 
 @pytest.fixture(scope="session")
 def use_real_services():
-    """Check if tests should use real services or mocks."""
+    """Check if tests should use real services or mocks.
+
+    Returns:
+        True if TEST_USE_REAL_SERVICES is set to "true".
+    """
     return os.getenv("TEST_USE_REAL_SERVICES", "false").lower() == "true"
 
 
@@ -71,9 +77,12 @@ def mock_env_vars(use_real_services):
 
 @pytest.fixture(scope="session")
 def mock_azure_storage(use_real_services):
-    """Mock Azure storage components."""
+    """Mock Azure storage components.
+
+    Yields:
+        Dict of mocked storage clients, or None if using real services.
+    """
     if use_real_services:
-        # Import and use real components
         # Don't mock, let it use real services
         yield None
     else:
@@ -113,7 +122,11 @@ def mock_azure_storage(use_real_services):
 
 @pytest.fixture(scope="session")
 def mock_searcher(use_real_services):
-    """Mock or use real Searching.Searcher class."""
+    """Mock or use real Searching.Searcher class.
+
+    Yields:
+        Searcher instance (real or mock).
+    """
     if use_real_services:
         searcher = Searching.Searcher(
             db_uri=os.getenv("VECTORDB_PATH"),
@@ -144,7 +157,11 @@ def mock_searcher(use_real_services):
 
 @pytest.fixture(scope="session")
 def mock_openai(use_real_services):
-    """Mock or use real OpenAI client."""
+    """Mock or use real OpenAI client.
+
+    Yields:
+        Mock OpenAI client, or None if using real services.
+    """
     if use_real_services:
         # Use real OpenAI client with env vars
         yield None
@@ -172,12 +189,14 @@ def client(
     mock_searcher,  # noqa: ARG001
     mock_openai,  # noqa: ARG001
 ):
-    """
-    Test client for the FastAPI app.
-    Uses session scope to load only once for all tests, improving performance.
+    """Test client for the FastAPI app.
 
+    Uses session scope to load only once for all tests, improving performance.
     Dependencies are explicitly listed to ensure proper initialization order.
     The fixtures are not used in the function body but are required for setup.
+
+    Yields:
+        TestClient instance for the FastAPI app.
     """
     with TestClient(fastapi_app) as test_client:
         yield test_client
@@ -185,8 +204,13 @@ def client(
 
 @pytest.fixture(scope="session")
 def mock_assistant(mock_searcher, use_real_services):
-    """Mock or real Assistant instance. Session-scoped for performance."""
+    """Mock or real Assistant instance.
 
+    Session-scoped for performance.
+
+    Returns:
+        Assistant instance.
+    """
     if use_real_services:
         assistant = Assistant(
             openai_api_key=os.getenv("AZURE_OPENAI_API_KEY"),

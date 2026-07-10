@@ -95,8 +95,7 @@ nav:
       - Assistant: api/assistant.md
       - Assistant Tools: api/assistanttools.md
       - Searching: api/searching.md
-      - Storage: api/storage.md
-      - Version: api/version.md
+      - Utilities: api/utilities.md
 
 extra:
   social:

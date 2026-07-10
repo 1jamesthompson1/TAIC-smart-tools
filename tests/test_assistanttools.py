@@ -1,3 +1,5 @@
+"""Tests for the AssistantTools module."""
+
 import os
 
 import pytest
@@ -11,7 +13,6 @@ from backend.AssistantTools import ReadReportTool, SearchTool
 )
 def test_tool_execution_search(mock_searcher):
     """Test that search tool actually executes."""
-
     search_tool = SearchTool(mock_searcher)
     result = search_tool.execute(
         query="safety factor",
@@ -33,7 +34,6 @@ def test_tool_execution_search(mock_searcher):
 )
 def test_tool_execution_read_report(mock_searcher):
     """Test that read report tool actually executes."""
-
     read_tool = ReadReportTool(mock_searcher)
 
     # Use a known report ID from the mock or real database
