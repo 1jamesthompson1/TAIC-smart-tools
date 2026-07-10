@@ -1,5 +1,5 @@
-"""
-Simple version tracking utility for TAIC smart assistant.
+"""Simple version tracking utility for TAIC smart assistant.
+
 Reads version from pyproject.toml and provides compatibility checking.
 """
 
@@ -8,7 +8,11 @@ from pathlib import Path
 
 
 def get_current_version() -> str:
-    """Get current version from pyproject.toml"""
+    """Get current version from pyproject.toml.
+
+    Returns:
+        The current version string from pyproject.toml, or a default if missing.
+    """
     pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
 
     with pyproject_path.open() as f:
@@ -21,7 +25,14 @@ def get_current_version() -> str:
 
 
 def parse_version(version: str) -> tuple[int, int, int]:
-    """Parse semantic version string into (major, minor, patch)"""
+    """Parse semantic version string into (major, minor, patch).
+
+    Args:
+        version: A string in the format "major.minor.patch".
+
+    Returns:
+        A tuple containing the major, minor, and patch version numbers.
+    """
     try:
         parts = version.split(".")
         return (int(parts[0]), int(parts[1]), int(parts[2]))
@@ -33,15 +44,19 @@ def is_compatible(
     stored_version: str,
     current_version: str | None = None,
 ) -> tuple[bool, str]:
-    """
-    Check if stored version is compatible with current version.
+    """Check if stored version is compatible with current version.
 
     Rules:
     - No version = incompatible (error)
     - Major version differences = incompatible
     - Minor/patch differences = compatible but warn
 
-    Returns: (is_compatible, message)
+    Args:
+        stored_version: The stored version string to compare against.
+        current_version: The current version string to compare against. If None, it will be read from pyproject.toml.
+
+    Returns:
+        A tuple of (is_compatible, message) indicating compatibility status and details.
     """
     if current_version is None:
         current_version = get_current_version()

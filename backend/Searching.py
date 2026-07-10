@@ -1,3 +1,8 @@
+"""Module enabling semantic search and embedding.
+
+This module is used by the semantic search tool.
+"""
+
 import os
 from typing import ClassVar, Literal, NamedTuple
 
@@ -5,6 +10,7 @@ import lancedb
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as plotly
 from azure.ai.inference import EmbeddingsClient
 from azure.core.credentials import AzureKeyCredential
 from lancedb.embeddings.base import TextEmbeddingFunction
@@ -16,47 +22,56 @@ from rich import print, table  # noqa: A004
 # This has to be added in manually unless https://github.com/lancedb/lancedb/issues/2518 is resolved
 @register("azure-ai-text")
 class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
-    """
-    An embedding function that uses the AzureAI API
+    """An embedding function that uses the AzureAI API.
 
     https://learn.microsoft.com/en-us/python/api/overview/azure/ai-inference-readme?view=azure-python-preview
 
     - AZURE_AI_ENDPOINT: The endpoint URL for the AzureAI service.
     - AZURE_AI_API_KEY: The API key for the AzureAI service.
 
-    Parameters
-    ----------
-    - name: str
-        The name of the model you want to use from the model catalog.
+    Attributes:
+        name: The name of the model you want to use from the model catalog.
 
+    Examples:
+        Usage example:
 
-    Examples
-    --------
-    import lancedb
-    import pandas as pd
-    from lancedb.pydantic import LanceModel, Vector
-    from lancedb.embeddings import get_registry
+        ```python
+        import lancedb
+        import pandas as pd
+        from lancedb.pydantic import LanceModel, Vector
+        from lancedb.embeddings import get_registry
 
-    model = get_registry().get("azure-ai-text").create(name="embed-v-4-0")
+        model = get_registry().get("azure-ai-text").create(name="embed-v-4-0")
 
-    class TextModel(LanceModel):
-        text: str = model.SourceField()
-        vector: Vector(model.ndims()) = model.VectorField()
+        class TextModel(LanceModel):
+            text: str = model.SourceField()
+            vector: Vector(model.ndims()) = model.VectorField()
 
-    df = pd.DataFrame({"text": ["hello world", "goodbye world"]})
-    db = lancedb.connect("lance_example")
-    tbl = db.create_table("test", schema=TextModel, mode="overwrite")
+        df = pd.DataFrame({"text": ["hello world", "goodbye world"]})
+        db = lancedb.connect("lance_example")
+        tbl = db.create_table("test", schema=TextModel, mode="overwrite")
 
-    tbl.add(df)
-    rs = tbl.search("hello").limit(1).to_pandas()
-    #           text                                             vector  _distance
-    # 0  hello world  [-0.018188477, 0.0134887695, -0.013000488, 0.0...   0.841431
+        tbl.add(df)
+        rs = tbl.search("hello").limit(1).to_pandas()
+        #           text                                             vector  _distance
+        # 0  hello world  [-0.018188477, 0.0134887695, -0.013000488, 0.0...   0.841431
+        ```
     """
 
     name: str
     client: ClassVar = None
 
-    def ndims(self):
+    def ndims(self) -> int:
+        """Return the number of dimensions used.
+
+        Checks the embedding model used and returns the number of dimensions.
+
+        Returns:
+            int: Number of dimensions for the embedding model.
+
+        Raises:
+            ValueError: If unknown model.
+        """
         if self.name == "embed-v-4-0":
             return 1536
         if self.name in {"Cohere-embed-v3-english", "Cohere-embed-v3-multilingual"}:
@@ -71,6 +86,16 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         raise ValueError(msg)
 
     def compute_query_embeddings(self, query: str, *_args, **_kwargs) -> list[np.array]:
+        """Calculate embedding for given query string.
+
+        Wrapper for compute_source_embeddings.
+
+        Parameters:
+            query: Text to search.
+
+        Returns:
+            Embedding of the query parameter.
+        """
         return self.compute_source_embeddings(query, input_type="query")
 
     def compute_source_embeddings(
@@ -79,6 +104,17 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         *_args,
         **kwargs,
     ) -> list[np.array]:
+        """Calculate embedding for given texts parameter.
+
+        Sanitize texts and return the embedding of the texts parameter.
+        Wrapper for generate_embeddings.
+
+        Parameters:
+            texts: The texts to embed.
+
+        Returns:
+            Embedding of the texts parameter.
+        """
         texts = self.sanitize_input(texts)
         input_type = (
             kwargs.get("input_type") or "document"
@@ -91,16 +127,16 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         *_args,
         **kwargs,
     ) -> list[np.array]:
-        """
-        Get the embeddings for the given texts
+        """Get the embeddings for the given texts.
 
-        Parameters
-        ----------
-        texts: list[str] or np.ndarray (of str)
-            The texts to embed
-        input_type: Optional[str]
+        Parameters:
+            texts: The texts to embed.
 
-        truncation: Optional[bool]
+        Returns:
+            list: Embedding
+
+        Raises:
+            ValueError: If texts parameter is an np.ndarray with the wrong data type.
         """
         AzureAITextEmbeddingFunction._init_client()
 
@@ -145,6 +181,17 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
 
 
 class SearchParams(NamedTuple):
+    """Simple class to store search parameters.
+
+    Attributes:
+        query (str): Query
+        search_type: (str): Type of search (fts or vector)
+        year_range (tuple[int, int]): Year range for the search
+        document_type (list[str]): Document type
+        modes (list[str]): Modes to include
+        agencies (list[str]): Investigation agencies to include
+    """
+
     query: str
     search_type: Literal["fts", "vector"] | None
     year_range: tuple[int, int]
@@ -154,7 +201,18 @@ class SearchParams(NamedTuple):
 
 
 class Searcher:
-    def __init__(self, db_uri, table_name):
+    """Manage knowledge search functionality."""
+
+    def __init__(self, db_uri: str, table_name: str):
+        """Constructor.
+
+        Parameters:
+            db_uri: URI of the database to search.
+            table_name: Name of the table to search.
+
+        Raises:
+            ValueError: If fails to open table.
+        """
         print("[bold]Creating searcher[/bold]")
         print(f"connecting to database at {db_uri}")
         self.vector_db = lancedb.connect(db_uri)
@@ -194,13 +252,24 @@ class Searcher:
             msg = "agency column not found in table"
             raise ValueError(msg)
 
+    @staticmethod
     def __get_where_statement(
-        self,
         year_range: tuple[int, int],
         document_type: list[str],
         modes: list[str],
         agencies: list[str],
-    ):
+    ) -> str:
+        """Generate the where statement of the query.
+
+        Parameters:
+            year_range (tuple[int, int]): Year range for the search
+            document_type (list[str]): Document type
+            modes (list[str]): Modes to include
+            agencies (list[str]): Investigation agencies to include
+
+        Returns:
+            str: Where clause as text.
+        """
         where_statement = []
         if year_range:
             where_statement.append(
@@ -210,7 +279,7 @@ class Searcher:
             document_types = ", ".join(f'"{dt}"' for dt in document_type)
             where_statement.append(f"document_type in ({document_types})")
         if modes and len(modes) > 1:
-            where_statement.append(f"mode in {tuple([str(mode) for mode in modes])}")
+            where_statement.append(f"mode in {tuple(str(mode) for mode in modes)}")
         elif modes and len(modes) == 1:
             where_statement.append(f"mode = '{modes[0]!s}'")
         if agencies and len(agencies) > 1:
@@ -220,12 +289,20 @@ class Searcher:
 
         return " AND ".join(where_statement)
 
+    @staticmethod
     def __print_search_query(
-        self,
         query: str,
         final_query: str | list[float] | None,
         where_statement: str,
     ):
+        """Print search query.
+
+        Parameters:
+            query (str): Query text.
+            final_query (str | list[float] | None): Final query as str or vector.
+            where_statement (str): Where clause as text.
+
+        """
         query_table = table.Table(
             title="🔍 Conducting search with 🔍",
             show_header=True,
@@ -251,7 +328,22 @@ class Searcher:
         params: SearchParams,
         limit: int = 150,
         relevance: float = 0,
-    ):
+    ) -> tuple[pd.DataFrame, dict, list | None]:
+        """Run query.
+
+        Parameters:
+            params (SearchParams): Search parameters.
+            limit (int): Maximum number of results to return. Defaults to 150.
+            relevance (float): Relevance criteria. Defaults to 0.
+
+        Returns:
+            results (DataFrame): Results as a Pandas DataFrame.
+            info (dict): Additional info (eg, info messages, # of records found).
+            plots: Plots to display.
+
+        Raises:
+            ValueError: If incorrect search type (not "fts" or "vector").
+        """
         info = {
             "info_message": "",
         }
@@ -270,11 +362,11 @@ class Searcher:
         )
 
         final_query: list[float] | str | None = None
-        if params.query == "" or params.query is None:
+        if not params.query or params.query is None:
             final_query = None
             # Fix up error with LLM not providing the right parameters
             params = params._replace(search_type=None)
-        elif params.search_type in ["fts", "vector"]:
+        elif params.search_type in {"fts", "vector"}:
             final_query = params.query
         else:
             msg = f"type must be 'fts' or 'vector' not {params.search_type}"
@@ -352,10 +444,19 @@ class Searcher:
 
 
 class GraphMaker:
+    """Supports the display of graphs summaries of search queries."""
+
     def __init__(self, context):
+        """Constructor."""
         self.context = context
 
-    def add_visual_layout(self, fig):
+    @staticmethod
+    def add_visual_layout(fig: plotly.Figure) -> plotly.Figure:
+        """Plot a graph.
+
+        Returns:
+            The generated graph.
+        """
         fig = fig.update_layout(width=310)
 
         # If fig a pie chart
@@ -371,7 +472,12 @@ class GraphMaker:
 
         return fig
 
-    def get_document_type_pie_chart(self):
+    def get_document_type_pie_chart(self) -> plotly.Figure:
+        """Plot pie chart for 'document type'.
+
+        Returns:
+            A pie chart graph.
+        """
         context_df = self.context["document_type"].value_counts().reset_index()
         context_df.columns = ["document_type", "count"]
         fig = px.pie(
@@ -383,7 +489,12 @@ class GraphMaker:
 
         return self.add_visual_layout(fig)
 
-    def get_mode_pie_chart(self):
+    def get_mode_pie_chart(self) -> plotly.Figure:
+        """Plot pie chart for 'mode'.
+
+        Returns:
+            A pie chart graph.
+        """
         context_df = self.context["mode"].value_counts().reset_index()
         context_df.columns = ["mode", "count"]
         fig = px.pie(
@@ -395,7 +506,12 @@ class GraphMaker:
 
         return self.add_visual_layout(fig)
 
-    def get_year_histogram(self):
+    def get_year_histogram(self) -> plotly.Figure:
+        """Plot histogram per 'year'.
+
+        Returns:
+            An histogram.
+        """
         context_df = self.context
         fig = px.histogram(
             context_df,
@@ -404,7 +520,12 @@ class GraphMaker:
         )
         return self.add_visual_layout(fig)
 
-    def get_most_common_event_types(self):
+    def get_most_common_event_types(self) -> plotly.Figure:
+        """Plot pie chart for most common event types.
+
+        Returns:
+            A pie chart graph.
+        """
         context_df = self.context
         type_counts = context_df.groupby("type")["document"].count()
 
@@ -431,7 +552,12 @@ class GraphMaker:
 
         return self.add_visual_layout(fig)
 
-    def get_agency_pie_chart(self):
+    def get_agency_pie_chart(self) -> plotly.Figure:
+        """Plot pie chart for 'agency'.
+
+        Returns:
+            A pie chart graph.
+        """
         context_df = self.context["agency"].value_counts().reset_index()
         context_df.columns = ["agency", "count"]
         fig = px.pie(

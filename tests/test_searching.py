@@ -1,3 +1,5 @@
+"""Tests for the Searching module."""
+
 import os
 import time
 
@@ -18,7 +20,8 @@ class TestSearching:
         not os.getenv("TEST_USE_REAL_SERVICES"),
         reason="Requires real services",
     )
-    def test_real_searcher_initialization(self, mock_searcher: Searcher):
+    @staticmethod
+    def test_real_searcher_initialization(mock_searcher: Searcher):
         """Test that the real searcher initializes properly."""
         assert mock_searcher is not None
         assert hasattr(mock_searcher, "knowledge_search")
@@ -57,7 +60,7 @@ class TestSearching:
     )
     @pytest.mark.parametrize("search_type", ["fts", "vector"])
     def test_empty_search(self, mock_searcher: Searcher, search_type: str):
-        """Test search that has no search query and simply a filter search"""
+        """Test search that has no search query and simply a filter search."""
         params = SearchParams(
             query="",
             search_type=search_type,

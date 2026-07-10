@@ -1,3 +1,8 @@
+"""Main FastAPI/Gradio application for TAIC Smart Tools.
+
+Provides the web interface, authentication, AI assistant, and knowledge search functionality.
+"""
+
 import ast
 import logging
 import os
@@ -105,6 +110,11 @@ print("[bold green]✓ All storage systems initialized[/bold green]")
 app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount(
+    "/documentation",
+    StaticFiles(directory="site", html=True),
+    name="documentation",
+)
 
 # Azure AD OAuth settings
 AZURE_CLIENT_ID = os.getenv("CLIENT_ID")
@@ -137,7 +147,16 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 # Dependency to get the current user
 def get_user(request: Request):
-    # Developer no-login mode: return a dev username and set session
+    """Get the current user from the session, or a dev username in no-login mode.
+
+    Developer no-login mode: return a dev username and set session.
+
+    Returns:
+        str: Username of the current user.
+
+    Raises:
+        HTTPException: If user is not authenticated (redirects to login).
+    """
     if os.getenv("NO_LOGIN", "false").lower() == "true":
         dev_username = os.getenv("DEV_USERNAME", "devuser")
         # Try to ensure session user is available for code paths that read it
@@ -156,19 +175,34 @@ def get_user(request: Request):
 
 @app.get("/")
 def public(user: dict = Depends(get_user)):  # noqa: B008
+    """Redirect authenticated users to /tools, unauthenticated to login.
+
+    Returns:
+        RedirectResponse to /tools or /login-page.
+    """
     if user:
         return RedirectResponse(url="/tools")
     return RedirectResponse(url="/login-page")
 
 
 @app.route("/logout")
-async def logout(request: Request):
+def logout(request: Request):
+    """Log out the current user by clearing the session.
+
+    Returns:
+        RedirectResponse to the home page.
+    """
     request.session.pop("user", None)
     return RedirectResponse(url="/")
 
 
 @app.route("/login")
 async def login(request: Request):
+    """Initiate Azure AD OAuth login flow.
+
+    Returns:
+        RedirectResponse to Azure AD authorization endpoint.
+    """
     # Forcing deployed url to use https. This is because it seems to default to using http.
     if "localhost" not in request.url.hostname and "https" not in request.url.scheme:
         redirect_uri = "https://" + request.url.hostname + request.url_for("auth").path
@@ -179,6 +213,11 @@ async def login(request: Request):
 
 @app.route("/auth")
 async def auth(request: Request):
+    """Handle Azure AD OAuth callback and store user in session.
+
+    Returns:
+        RedirectResponse to the home page.
+    """
     try:
         token = await oauth.azure.authorize_access_token(request)
         user = await oauth.azure.parse_id_token(token, token["userinfo"]["nonce"])
@@ -194,11 +233,21 @@ async def auth(request: Request):
 #
 # =====================================================================
 def handle_undo(history: Assistant.CompleteHistory, undo_data: gr.UndoData):
+    """Handle undo action on a chat message.
+
+    Returns:
+        Tuple of (updated history, gradio format, last message).
+    """
     last_message = history.undo(undo_data.index)
     return history, history.gradio_format(), last_message
 
 
 def handle_edit(history: Assistant.CompleteHistory, edit_data: gr.EditData):
+    """Handle edit action on a chat message.
+
+    Returns:
+        Tuple of (updated history, gradio format, None, edited value).
+    """
     history.edit(edit_data.index, edit_data.value)
     return history, history.gradio_format(), None, edit_data.value
 
@@ -207,6 +256,11 @@ def handle_example_select(
     selection: gr.SelectData,
     current_conversation: Assistant.CompleteHistory,
 ):
+    """Handle selection of an example query.
+
+    Returns:
+        Result of handle_submit for the selected example.
+    """
     return handle_submit(selection.value["text"], current_conversation)
 
 
@@ -215,6 +269,11 @@ def handle_submit(
     history: Assistant.CompleteHistory = None,
     conversation_id=None,
 ):
+    """Handle submission of a user message.
+
+    Returns:
+        Tuple of (textbox, user input string, history, gradio format, conversation id).
+    """
     if history is None:
         history = Assistant.CompleteHistory([])
     history.add_message("user", user_input)
@@ -237,6 +296,11 @@ def create_or_update_conversation(
     conversation_title,
     history: Assistant.CompleteHistory,
 ):
+    """Create or update a conversation in storage.
+
+    Returns:
+        Updated conversation title, or None if history is empty.
+    """
     if history == []:  # ignore instance when history is empty
         return None
 
@@ -284,6 +348,11 @@ def create_or_update_conversation(
 
 
 def get_user_conversations_metadata(request: gr.Request):
+    """Get conversation metadata for the current user.
+
+    Returns:
+        List of conversation metadata dicts.
+    """
     username = request.username
 
     # Get only conversation metadata (no full message history)
@@ -291,6 +360,11 @@ def get_user_conversations_metadata(request: gr.Request):
 
 
 def load_conversation(request: gr.Request, conversation_id: str):
+    """Load a conversation from storage.
+
+    Returns:
+        Tuple of (history, gradio format, conversation id, title, button).
+    """
     username = request.username
 
     print(
@@ -365,7 +439,7 @@ def load_conversation(request: gr.Request, conversation_id: str):
     return history, [], conversation_id, "Failed to load", gr.Button(visible=True)
 
 
-def delete_conversation(  # noqa: PLR0913
+def delete_conversation(  # noqa: PLR0913, PLR0917
     request: gr.Request,
     current_conv: gr.State,
     chatbot: gr.Chatbot,
@@ -373,9 +447,20 @@ def delete_conversation(  # noqa: PLR0913
     current_conv_title: gr.State,
     to_delete: str | None,
 ):
-    """
-    Delete a conversation and clear current conversation state if needed.
+    """Delete a conversation and clear current conversation state if needed.
+
     Will ask the user for confirmation before calling this function.
+
+    Args:
+        request (gr.Request): Gradio request object containing user info.
+        current_conv (gr.State): Current conversation state.
+        chatbot (gr.Chatbot): Chatbot component to update.
+        current_conv_id (gr.State): Current conversation ID state.
+        current_conv_title (gr.State): Current conversation title state.
+        to_delete (str | None): ID of the conversation to delete, or None if cancelled.
+
+    Returns:
+        Tuple of (updated conversation state, chatbot, conversation id, title, button).
     """
     username = request.username
 
@@ -441,6 +526,11 @@ assistant_instance = Assistant.Assistant(
 
 
 def get_user_search_history(request: gr.Request):
+    """Get search history for the current user.
+
+    Returns:
+        List of search history metadata dicts.
+    """
     username = request.username
 
     # Get only search metadata (no full detailed data)
@@ -450,6 +540,11 @@ def get_user_search_history(request: gr.Request):
 
 
 def load_previous_search(request: gr.Request, search_id: str):
+    """Load a previous search from storage.
+
+    Returns:
+        Tuple of search parameters, results, plots, and metadata.
+    """
     username = request.username
 
     print(f"[orange]Loading search {search_id} for user {username}[/orange]")
@@ -541,8 +636,8 @@ def delete_search(
     request: gr.Request,
     search_id_to_delete: gr.State,
 ):
-    """
-    Delete a search.
+    """Delete a search.
+
     Will ask the user for confirmation before calling this function.
     """
     username = request.username
@@ -572,12 +667,14 @@ def create_complete_search_params(
     modes: list,
     agencies: list,
 ):
-    """
-    Create complete SearchParams by filling in defaults for any missing fields.
+    """Create complete SearchParams by filling in defaults for any missing fields.
+
+    Returns:
+        Searching.SearchParams with all fields populated.
     """
     search_type = (
         "none"
-        if (query == "" or query is None)
+        if (not query or query is None)
         else ("fts" if query[0] == '"' and query[-1] == '"' else "vector")
     )
     if search_type == "fts":
@@ -604,7 +701,7 @@ def create_complete_search_params(
     )
 
 
-def format_search_results(  # noqa: PLR0913
+def format_search_results(  # noqa: PLR0913, PLR0917
     results: pd.DataFrame,
     plots: dict,
     info: dict,
@@ -612,8 +709,11 @@ def format_search_results(  # noqa: PLR0913
     search_start_time: datetime,
     username: str,
 ):
-    """
-    Format the search results for display and download.
+    """Format the search results for display and download.
+
+    Returns:
+        Tuple of (formatted results DataFrame, results info dict, message string,
+        download dict, plots dict).
     """
     results_to_download = results.copy()
     # Format the results to be displayed in the dataframe
@@ -662,6 +762,11 @@ def perform_actual_search(
     relevance: float,
     limit: int = 5000,
 ):
+    """Execute the actual search against the vector database.
+
+    Returns:
+        Tuple of (results DataFrame, info dict, plots dict).
+    """
     results, info, plots = searching_instance.knowledge_search(
         settings,
         relevance=relevance,
@@ -671,7 +776,7 @@ def perform_actual_search(
     return results, info, plots
 
 
-def perform_search(  # noqa: PLR0913
+def perform_search(  # noqa: PLR0913, PLR0917
     username: str,
     query: str,
     year_range: list,
@@ -680,6 +785,14 @@ def perform_search(  # noqa: PLR0913
     agencies: list,
     relevance: float,
 ):
+    """Execute a complete search workflow: search, format, store, and return results.
+
+    Returns:
+        Tuple of (results DataFrame, download dict, message string, plots...).
+
+    Raises:
+        gradio.Error: If the search encounters a processing error.
+    """
     search_start_time = datetime.now(tz=timezone.utc)
     error_info = None
     try:
@@ -758,8 +871,10 @@ def perform_search(  # noqa: PLR0913
 
 
 def update_download_button(download_dict: dict):
-    """
-    Update the download button to to point to a new temporary file that is the results ready to be downloaded.
+    """Create a temporary file with search results and update the download button.
+
+    Returns:
+        gr.DownloadButton with the file path, or hidden if no results.
     """
     if download_dict["results"] is None or download_dict["results"].empty:
         return gr.DownloadButton(visible=False)
@@ -800,6 +915,11 @@ def update_download_button(download_dict: dict):
 
 
 def get_welcome_message(request: gr.Request):
+    """Get welcome message with user name and version info.
+
+    Returns:
+        Tuple of (username string, version info markdown string).
+    """
     return (
         request.username,
         f"**Data:** {searching_instance.last_updated} • **App:** {Version.CURRENT_VERSION} • **DB:** {searching_instance.db_version}",
@@ -807,6 +927,11 @@ def get_welcome_message(request: gr.Request):
 
 
 def get_user_name(request: gr.Request):
+    """Get the current user's name from the request.
+
+    Returns:
+        str: Username.
+    """
     return request.username
 
 
@@ -828,6 +953,11 @@ TAIC_theme = gr.themes.Default(
 
 
 def get_footer():
+    """Read and return the footer HTML content.
+
+    Returns:
+        gr.HTML component with footer content.
+    """
     with (static_path / "footer.html").open(
         "r",
         encoding="utf-8",
@@ -836,7 +966,7 @@ def get_footer():
     return gr.HTML(footer_html)
 
 
-with gr.Blocks(
+with gr.Blocks(  # noqa: PLR1702
     title="TAIC smart tools",
     theme=TAIC_theme,
     fill_height=True,
@@ -975,6 +1105,7 @@ with gr.Blocks(
 
                     @gr.render(inputs=[user_conversations])
                     def render_conversations(conversations):
+                        """Render the list of previous conversations."""
                         for conversation in conversations:
                             with gr.Group(), gr.Row():
                                 gr.Markdown(
@@ -1173,6 +1304,7 @@ with gr.Blocks(
 
                     @gr.render(inputs=[user_search_history])
                     def render_search_history(search_history):
+                        """Render the list of previous searches."""
                         for search in search_history:
                             with gr.Group(), gr.Row():
                                 query_text = search.get("query", "No query")
@@ -1366,6 +1498,7 @@ with gr.Blocks(
         gr.Markdown(f"**App version:** {Version.CURRENT_VERSION}")
         gr.Markdown("Please login to continue:")
         gr.Button("Login", link="/login")
+        gr.Markdown("[Public documentation here](/documentation)")
 
     footer = get_footer()
 

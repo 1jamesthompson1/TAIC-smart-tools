@@ -1,5 +1,5 @@
-"""
-Azure Blob Storage implementation for storing conversation histories and knowledge search logs.
+"""Azure Blob Storage implementation for storing conversation histories and knowledge search logs.
+
 This provides a base class for blob storage operations and specialized classes for different data types.
 """
 
@@ -20,14 +20,13 @@ from . import Searching, Version
 
 
 class BaseBlobStore(ABC):
-    """
-    Base class for Azure Blob Storage operations.
+    """Base class for Azure Blob Storage operations.
+
     Provides common functionality for storing and retrieving JSON data as blobs.
     """
 
     def __init__(self, connection_string: str, container_name: str):
-        """
-        Initialize the Blob Storage client.
+        """Initialize the Blob Storage client.
 
         Args:
             connection_string: Azure Storage connection string
@@ -44,10 +43,18 @@ class BaseBlobStore(ABC):
         # Create container if it doesn't exist
         self._setup_container()
 
-    def _get_connection_string(self) -> str:
-        """
-        Build connection string from environment variables.
+    @staticmethod
+    def _get_connection_string() -> str:
+        """Build connection string from environment variables.
+
         Uses the same storage account as your existing Table Storage.
+        Loads account details from environment.
+
+        Returns:
+            str: Connection string.
+
+        Raises:
+            ValueError: When missing account_name or account_key
         """
         account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
         account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY")
@@ -80,8 +87,7 @@ class BaseBlobStore(ABC):
         data: dict | list,
         content_type: str = "application/json",
     ) -> str | None:
-        """
-        Store data as a JSON blob.
+        """Store data as a JSON blob.
 
         Args:
             blob_name: Name/path for the blob
@@ -109,8 +115,7 @@ class BaseBlobStore(ABC):
         return blob_name
 
     def retrieve_blob(self, blob_name: str) -> dict | list | None:
-        """
-        Retrieve data from blob storage.
+        """Retrieve data from blob storage.
 
         Args:
             blob_name: Name/path of the blob to retrieve
@@ -131,8 +136,7 @@ class BaseBlobStore(ABC):
         return json.loads(json_content)
 
     def delete_blob(self, blob_name: str) -> bool:
-        """
-        Delete a blob.
+        """Delete a blob.
 
         Args:
             blob_name: Name/path of the blob to delete
@@ -148,13 +152,18 @@ class BaseBlobStore(ABC):
 
 
 class ConversationBlobStore(BaseBlobStore):
-    """
-    Handles conversation storage using Azure Blob Storage for JSON data.
+    """Handles conversation storage using Azure Blob Storage for JSON data.
+
     Inherits from BaseBlobStore for common blob operations.
     """
 
-    def _get_blob_name(self, username: str, conversation_id: str) -> str:
-        """Generate blob name for a conversation."""
+    @staticmethod
+    def _get_blob_name(username: str, conversation_id: str) -> str:
+        """Generate blob name for a conversation.
+
+        Returns:
+            str: Blob name for conversation.
+        """
         return f"{username}/{conversation_id}.json"
 
     def store_conversation_blob(
@@ -163,8 +172,7 @@ class ConversationBlobStore(BaseBlobStore):
         conversation_id: str,
         history: list[dict],
     ) -> str | None:
-        """
-        Store conversation history as a JSON blob.
+        """Store conversation history as a JSON blob.
 
         Args:
             username: Username of the conversation owner
@@ -185,8 +193,7 @@ class ConversationBlobStore(BaseBlobStore):
         username: str,
         conversation_id: str,
     ) -> list[dict] | None:
-        """
-        Retrieve conversation history from blob storage.
+        """Retrieve conversation history from blob storage.
 
         Args:
             username: Username of the conversation owner
@@ -203,8 +210,7 @@ class ConversationBlobStore(BaseBlobStore):
         return None
 
     def delete_conversation_blob(self, username: str, conversation_id: str) -> bool:
-        """
-        Delete a conversation blob.
+        """Delete a conversation blob.
 
         Args:
             username: Username of the conversation owner
@@ -218,13 +224,18 @@ class ConversationBlobStore(BaseBlobStore):
 
 
 class KnowledgeSearchBlobStore(BaseBlobStore):
-    """
-    Handles knowledge search log storage using Azure Blob Storage for detailed search data.
+    """Handles knowledge search log storage using Azure Blob Storage for detailed search data.
+
     Stores comprehensive search results and parameters that exceed Table Storage limits.
     """
 
-    def _get_blob_name(self, username: str, search_id: str) -> str:
-        """Generate blob name for a knowledge search log."""
+    @staticmethod
+    def _get_blob_name(username: str, search_id: str) -> str:
+        """Generate blob name for a knowledge search log.
+
+        Returns:
+            str: Blob name for knowledge search.
+        """
         return f"{username}/{search_id}.json"
 
     def store_search_blob(
@@ -233,8 +244,7 @@ class KnowledgeSearchBlobStore(BaseBlobStore):
         search_id: str,
         search_data: dict,
     ) -> str | None:
-        """
-        Store knowledge search data as a JSON blob.
+        """Store knowledge search data as a JSON blob.
 
         Args:
             username: Username of the search owner
@@ -251,8 +261,7 @@ class KnowledgeSearchBlobStore(BaseBlobStore):
         return self.store_blob(blob_name, search_data)
 
     def retrieve_search_blob(self, username: str, search_id: str) -> list[dict] | None:
-        """
-        Retrieve knowledge search data from blob storage.
+        """Retrieve knowledge search data from blob storage.
 
         Args:
             username: Username of the search owner
@@ -265,8 +274,7 @@ class KnowledgeSearchBlobStore(BaseBlobStore):
         return self.retrieve_blob(blob_name)
 
     def delete_search_blob(self, username: str, search_id: str) -> bool:
-        """
-        Delete a knowledge search blob.
+        """Delete a knowledge search blob.
 
         Args:
             username: Username of the search owner
@@ -280,14 +288,13 @@ class KnowledgeSearchBlobStore(BaseBlobStore):
 
 
 class ConversationMetadataStore:
-    """
-    Handles conversation metadata storage in Table Storage.
+    """Handles conversation metadata storage in Table Storage.
+
     This works alongside the blob storage for complete conversation management.
     """
 
     def __init__(self, table_client: TableClient, blob_store: ConversationBlobStore):
-        """
-        Initialize with existing table client and blob store.
+        """Initialize with existing table client and blob store.
 
         Args:
             table_client: Azure Table Storage client (reuse existing)
@@ -304,12 +311,12 @@ class ConversationMetadataStore:
         history: list[dict],
         conversation_title: str | None = None,
     ) -> bool:
-        """
-        Store conversation: blob for JSON data, Table Storage for metadata.
+        """Store conversation: blob for JSON data, Table Storage for metadata.
 
         Args:
             username: Username of the conversation owner
             conversation_id: Unique identifier for the conversation
+            db_version (int): Version of the databse
             history: List of conversation messages
             conversation_title: Title for the conversation
 
@@ -361,8 +368,7 @@ class ConversationMetadataStore:
         return True
 
     def get_user_conversations_metadata(self, username: str) -> list[dict]:
-        """
-        Retrieve only conversation metadata for a user (no full message history).
+        """Retrieve only conversation metadata for a user (no full message history).
 
         Args:
             username: Username to retrieve conversations for
@@ -404,8 +410,7 @@ class ConversationMetadataStore:
         username: str,
         conversation_id: str,
     ) -> dict | None:
-        """
-        Load a single conversation with full message history.
+        """Load a single conversation with full message history.
 
         Args:
             username: Username of the conversation owner
@@ -445,8 +450,7 @@ class ConversationMetadataStore:
         }
 
     def delete_conversation(self, username: str, conversation_id: str) -> bool:
-        """
-        Marks a conversation as deleted in the metadata. The blob data is kept.
+        """Marks a conversation as deleted in the metadata. The blob data is kept.
 
         Args:
             username: Username of the conversation owner
@@ -477,14 +481,13 @@ class ConversationMetadataStore:
 
 
 class KnowledgeSearchMetadataStore:
-    """
-    Handles knowledge search metadata storage in Table Storage.
+    """Handles knowledge search metadata storage in Table Storage.
+
     Works alongside KnowledgeSearchBlobStore for complete search log management.
     """
 
-    def __init__(self, table_client, blob_store: KnowledgeSearchBlobStore):
-        """
-        Initialize with existing table client and blob store.
+    def __init__(self, table_client: TableClient, blob_store: KnowledgeSearchBlobStore):
+        """Initialize with existing table client and blob store.
 
         Args:
             table_client: Azure Table Storage client (reuse existing)
@@ -493,7 +496,7 @@ class KnowledgeSearchMetadataStore:
         self.table_client = table_client
         self.blob_store = blob_store
 
-    def store_search_log(  # noqa: PLR0913
+    def store_search_log(  # noqa: PLR0913, PLR0917
         self,
         username: str,
         search_id: str,
@@ -506,17 +509,19 @@ class KnowledgeSearchMetadataStore:
         message: str,
         error_info: dict | None = None,
     ) -> bool:
-        """
-        Store knowledge search: blob for detailed data, Table Storage for metadata.
+        """Store knowledge search: blob for detailed data, Table Storage for metadata.
 
         Args:
-            username: Username of the search owner
-            search_id: Unique identifier for the search
-            search_settings: Search parameters and settings
-            results_info: Information about search results (count, relevance, etc.)
-            relevance: Relevance score for the search
-            results: DataFrame with detailed search results
-            error_info: Error information if search failed
+            username (str): Username of the search owner
+            search_id (str): Unique identifier for the search
+            search_settings (Searching.SearchParams): Search parameters and settings
+            relevance (float): Relevance score for the search
+            results_info (dict): Information about search results (count, relevance, etc.)
+            results (pd.DataFrame): DataFrame with detailed search results
+            plots (dict): Plotly figures for search analytics
+            download_dict (dict): Data for download/export
+            message (str): Search result message
+            error_info (dict): Error information if search failed
 
         Returns:
             True if successful, False otherwise
@@ -585,8 +590,7 @@ class KnowledgeSearchMetadataStore:
         username: str,
         limit: int | None = None,
     ) -> list[dict]:
-        """
-        Retrieve search history metadata for a user (without full detailed data).
+        """Retrieve search history metadata for a user (without full detailed data).
 
         Args:
             username: Username to retrieve search history for
@@ -633,8 +637,7 @@ class KnowledgeSearchMetadataStore:
         return searches
 
     def load_detailed_search(self, username: str, search_id: str) -> dict | None:
-        """
-        Load a single search with full detailed data from blob storage.
+        """Load a single search with full detailed data from blob storage.
 
         Args:
             username: Username of the search owner
@@ -681,8 +684,7 @@ class KnowledgeSearchMetadataStore:
         }
 
     def delete_search_log(self, username: str, search_id: str) -> bool:
-        """
-        Delete both metadata and blob for a search log.
+        """Delete both metadata and blob for a search log.
 
         Args:
             username: Username of the search owner
