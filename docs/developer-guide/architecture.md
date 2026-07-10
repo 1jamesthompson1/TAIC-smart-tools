@@ -21,8 +21,6 @@ Manages AI conversations using Azure OpenAI. Key classes:
 Tools the assistant can call:
 
 - `SearchTool`: Knowledge base search
-- `ReadReportTool`: Full report retrieval
-- `ReasoningTool`: Extended thinking
 - `DocumentationTool`: Internal docs access
 
 #### Searching (`backend/Searching.py`)

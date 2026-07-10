@@ -25,7 +25,6 @@ from backend.Assistant import CompleteHistory
 class TestAppSmoke:
     """Smoke tests for the web application."""
     SUCCESS_STATUS = 200
-    """Smoke tests for the web application."""
 
     @staticmethod
     def test_app_imports_without_error():

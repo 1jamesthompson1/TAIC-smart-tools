@@ -316,7 +316,7 @@ class ConversationMetadataStore:
         Args:
             username: Username of the conversation owner
             conversation_id: Unique identifier for the conversation
-            db_version (int): Version of the databse
+            db_version: Version of the database
             history: List of conversation messages
             conversation_title: Title for the conversation
 

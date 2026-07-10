@@ -52,7 +52,6 @@ def your_function(param1: str, param2: int) -> Result:
 
         Or with a more complete example:
 
-        ```python
         from mymodule import your_function
         
         # Setup
@@ -63,7 +62,6 @@ def your_function(param1: str, param2: int) -> Result:
         
         # Result
         print(result.value)  # Output: 'test'
-        ```
     """
 ```
 

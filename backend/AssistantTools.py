@@ -70,11 +70,11 @@ class SearchTool(Tool):
     _tool_name = "search"
     _tool_description = """Search for safety issues and recommendations from the New Zealand Transport Accident Investigation Commission. This function searches a vector database.
 Example usage:
-search(query="What are the common causes of aviation accidents?", type="vector", year_range=[2010, 2023], document_type=["safety_issue", "recommendation"], modes=["0"], agencies=["TAIC"])
+search(query=\"What are the common causes of aviation accidents?\", search_type=\"vector\", year_range=[2010, 2023], document_type=[\"safety_issue\", \"recommendation\"], modes=[\"0\"], agencies=[\"TAIC\"])
 
-search(query="What safety issues are associated with runway incursions?", type="vector", year_range=[2000, 2023], document_type=["safety_issue", "recommendations"], modes=["0"], agencies=["TAIC", "ATSB"])
+search(query=\"What safety issues are associated with runway incursions?\", search_type=\"vector\", year_range=[2000, 2023], document_type=[\"safety_issue\", \"recommendation\"], modes=[\"0\"], agencies=[\"TAIC\", \"ATSB\"])
 
-search(query="What are some recent accidents?", type="vector", year_range=[2000, 2023], document_type=["summary"], modes=["0", "1", "2"], agencies=["ATSB", "TSB", "TAIC"])
+search(query=\"What are some recent accidents?\", search_type=\"vector\", year_range=[2000, 2023], document_type=[\"summary\"], modes=[\"0\", \"1\", \"2\"], agencies=[\"ATSB\", \"TSB\", \"TAIC\"])
 """
     _tool_parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
