@@ -41,6 +41,7 @@ dev = [
     "mkdocs-macros-plugin>=1.0.0",
     "matplotlib>=3.10.8",
     "tiktoken>=0.12.0",
+    "ruff==0.15.21",  # Keep in sync with .pre-commit-config.yaml and .github/workflows/ci.yml
 ]
 
 [tool.uv]
