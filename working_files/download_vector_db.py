@@ -1,7 +1,9 @@
-import argparse  # noqa: INP001
+"""Download vector database from Azure Blob Storage using AzCopy."""
+
+import argparse
 import logging
 import os
-import subprocess
+import subprocess  # noqa: S404
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -10,7 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 def run_command(cmd, capture_output):
-    """Run a shell command and return output."""
+    """Run a shell command and return output.
+
+    Returns:
+        str or int: stdout if capture_output is True, else return code.
+    """
     try:
         shell_mode = os.name == "nt"
         if capture_output:

@@ -1,3 +1,11 @@
+"""Module managing AI assistant interactions.
+
+Contains three classes:
+- the Assistant class, which provides manages the interface with AI
+- the AssistantPrompts class, which contains the prompts
+- the CompleteHistory class, which manages the history.
+"""
+
 import json
 from collections.abc import Generator
 from datetime import datetime, timezone
@@ -8,23 +16,28 @@ from rich import print  # noqa: A004
 from .AssistantTools import DocumentationTool, SearchTool
 
 
-class CompleteHistory(list):
-    """
+# Reason for noqa:
+# Breaks expected behaviour when calling json.dump is not recognises as a JSON serializable object.
+class CompleteHistory(list):  # noqa: FURB189
+    """Modified list to store conversation history.
+
     This is a modified list that holds the complete history of the conversation.
 
     It stores all the information needed for both OpenAI and Gradio formats.
     """
 
-    def __init__(self, *args):
-        super().__init__(*args)
+    def __init__(self, messages: list):
+        """Constructor.
 
-        if len(args) != 1:
-            msg = "CompleteHistory must be initialized with a single iterable argument"
-            raise ValueError(
-                msg,
-            )
+        Args:
+            messages: List of conversation messages to initialize the history with.
 
-        if not isinstance(args[0], list):
+        Raises:
+            TypeError: If messages is not a list.
+        """
+        super().__init__(messages)
+
+        if not isinstance(messages, list):
             msg = "CompleteHistory must be initialized with a list"
             raise TypeError(
                 msg,
@@ -34,12 +47,16 @@ class CompleteHistory(list):
             self.format_check()
         except ValueError as e:
             print(f"[red]Warning: History format issue on init: {e}[/red]")
-            self.format()
+            self.fix_format()
 
-    def format(self):
-        """
+    def fix_format(self):
+        """Fix history loaded from older version of the app.
+
         Pre to 0.3.0 the message was just a list of dict with "role", "content" and optional "metadata".
         Need to expand this out into the full format with "display" and "ai" keys. To do this just copy the message to both and only have role and content for the ai key.
+
+        Raises:
+            ValueError: If there it cannot correctly parse expected history format.
         """
         new_history = []
 
@@ -62,11 +79,16 @@ class CompleteHistory(list):
         self.extend(new_history)
 
     def format_check(self):
-        """
+        """Check history format is correct.
+
         Check that the history is in the correct format.
         Each message must be a dict with "display" and "ai" keys.
         The "display" key must have "role" and "content".
         The "ai" key must have either "role" and "content" or "type", "output", "call_id".
+
+        Raises:
+            TypeError: If a message is of the wrong type
+            ValueError: If a value is unexpected
         """
         for i, message in enumerate(self):
             # Check roughly in the right format
@@ -107,7 +129,14 @@ class CompleteHistory(list):
                 msg,
             )
 
-    def add_message(self, role, content, metadata=None):
+    def add_message(self, role: str, content: str, metadata: str | None = None):
+        """Add message to history.
+
+        Args:
+            role: Role that generated the message.
+            content: Content of the message.
+            metadata: Additional metadata (default None).
+        """
         message = {
             "role": role,
             "content": content,
@@ -124,9 +153,11 @@ class CompleteHistory(list):
             },
         )
 
-    def start_thought(self, content=""):
-        """
-        Start a new assistant thought message.
+    def start_thought(self, content: str = ""):
+        """Start a new assistant thought message.
+
+        Args:
+            content: Initial content (default empty str)
         """
         self.append(
             {
@@ -146,8 +177,10 @@ class CompleteHistory(list):
         )
 
     def end_thought(self):
-        """
-        End the current assistant thought message.
+        """End the current assistant thought message.
+
+        Raises:
+            ValueError: If current history is empty or last message's display role is not 'assistant'
         """
         if len(self) == 0 or self[-1]["display"]["role"] != "assistant":
             msg = "No assistant message to end"
@@ -156,10 +189,11 @@ class CompleteHistory(list):
         self[-1]["display"]["metadata"]["status"] = "done"
 
     def update_last_message(self, delta_content):
-        """
-        Used for streaming updates to the last message.
-        """
+        """Used for streaming updates to the last message.
 
+        Raises:
+            ValueError: If current history is empty or last message's display role is not 'assistant'
+        """
         if len(self) == 0:
             msg = "No messages to update"
             raise ValueError(msg)
@@ -171,7 +205,12 @@ class CompleteHistory(list):
         self[-1]["display"]["content"] += delta_content
         self[-1]["ai"]["content"] += delta_content
 
-    def add_function_call(self, ai_call):
+    def add_function_call(self, ai_call: dict):
+        """Add a function call requested by the assistant.
+
+        Args:
+            ai_call: function call details
+        """
         self.append(
             {
                 "display": {
@@ -186,11 +225,16 @@ class CompleteHistory(list):
             },
         )
 
-    def complete_function_call(self, output, call_id):
-        """
-        Complete a function call by setting the previous message to done and adding the output message if provided.
-        """
+    def complete_function_call(self, output: str | None, call_id: str):
+        """Complete a function call by setting the previous message to done and adding the output message if provided.
 
+        Args:
+            output: output of the function called
+            call_id: id of the function called where the id is linked to the function call in the history
+
+        Raises:
+            ValueError: If current history is empty or last message's ai attribute is not a function call
+        """
         if len(self) == 0 or self[-1]["ai"].get("type") != "function_call":
             msg = "No function call to complete"
             raise ValueError(msg)
@@ -215,15 +259,19 @@ class CompleteHistory(list):
             },
         )
 
-    def undo(self, index):
-        """
-        Undo to a specific index in the history.
+    def undo(self, index: int) -> str:
+        """Undo to a specific index in the history.
+
         This removes all messages after the specified index. Reverts to a previous state
 
         Args:
-            index (int): The index to revert to. Must be a user message.
+            index: The index to revert to. Must be a user message.
+
         Returns:
             str: The content of the last user message after undo.
+
+        Raises:
+            ValueError: If index is out of bounds
         """
         if index < 0 or index >= len(self):
             msg = f"Index out of range for undo: {index}"
@@ -231,18 +279,25 @@ class CompleteHistory(list):
 
         last_message = self[index]["display"]["content"]
 
+        if self[index]["display"]["role"] != "user":
+            msg = "Can only undo to user messages"
+            raise ValueError(msg)
+
         del self[index:]
 
         return last_message
 
     def edit(self, index, new_content):
-        """
-        Edit the content of a specific message in the history.
+        """Edit the content of a specific message in the history.
+
         Will only let you edit user message.
 
         Args:
             index (int): The index of the message to edit.
             new_content (str): The new content for the message.
+
+        Raises:
+            ValueError: If index is out of bounds or display role is not 'user'
         """
         if index < 0 or index >= len(self):
             msg = f"Index out of range for edit: {index}"
@@ -257,34 +312,38 @@ class CompleteHistory(list):
 
         del self[index + 1 :]
 
-    def openai_format(self):
-        """
-        Convert to OpenAI message format.
+    def openai_format(self) -> list[dict]:
+        """Convert to OpenAI message format.
+
         This means the only two formats are:
         messages with a "role" and "content"
         or function calls with "type", "output", "call_id"
+
+        Returns:
+            History converted to the OpenAI format
         """
         return [msg["ai"] for msg in self]
 
-    def gradio_format(self):
-        """
-        Convert to Gradio message format.
+    def gradio_format(self) -> list[dict]:
+        """Convert to Gradio message format.
+
         All formats are the same, they must have atleast role and content, but could also have metadata and status.
+
+        Returns:
+            History converted to the Gradio format
         """
         return [msg["display"] for msg in self]
 
 
 class AssistantPrompts:
-    """
-    A collection of prompt templates for the Assistant.
-    All methods are static since they don't require instance state.
+    """A collection of prompt templates for the Assistant.
+
+    Note: All methods are static since they don't require instance state.
     """
 
     @staticmethod
     def conversation_title():
-        """
-        Returns AI prompt to generate a short title that summarises the topic of the conversation
-        """
+        """Returns AI prompt to generate a short title that summarises the topic of the conversation."""
         return """
 You are part of a chatbot assistant at the Transport Accident Investigation Commission. You help users add titles to their conversation. You will receive the conversation and you are to respond with a 5 word summary of the conversation.
 Provide a title that will best help the user recall what the conversation was.
@@ -293,9 +352,7 @@ Just respond with the title and nothing else.
 
     @staticmethod
     def general_info(columns, rows, last_updated):
-        """
-        Returns general context of the user's query
-        """
+        """Returns general context of the user's query."""
         return f"""
 Below is general information to help you contextualise the user's query.
 
@@ -331,13 +388,16 @@ issues.
 
     @staticmethod
     def orient_plan_system(general_info):
-        """
-        Returns AI prompt to orient and plan the initial orient and plan analysis
-        """
+        """Returns AI prompt to orient and plan the initial orient and plan analysis."""
         return f"""
-You are a expert working at the New Zealand transport accident investigation commission. Your job is to assistant employees of TAIC with their queries. The day is {datetime.now(timezone.utc)}. You should respond as if you are a senior accident investigator/research who is speaking to your colleagues.
+You are an expert working at the New Zealand Transport Accident Investigation Commission.
+Your job is to assist employees of TAIC with their queries. The day is {datetime.now(timezone.utc)}.
+You should respond as if you are a senior accident investigator/researcher who is speaking to your colleagues.
 
-You will be provided the conversation history including any function calls and output you have made. You are to orient yourself to the user's query and provide a plan for how you will react to the user's query. If you need more information you should call functions to get that information. If you have enough information to respond to the user, you should provide a short guideline for how you will respond to the user (you will be acting on this plan momentarily).
+You will be provided the conversation history including any function calls and output you have made.
+You are to orient yourself to the user's query and provide a plan for how you will react to the user's query.
+If you need more information you should call functions to get that information.
+If you have enough information to respond to the user, you should provide a short guideline for how you will respond to the user (you will be acting on this plan momentarily).
 
 {general_info}
 
@@ -345,25 +405,24 @@ You will be provided the conversation history including any function calls and o
 
     @staticmethod
     def act_system(general_info):
-        """
-        Returns AI prompt to generate the response to the prompt
-        """
+        """Returns AI prompt to generate the response to the prompt."""
         return f"""
-You are a expert working at the New Zealand transport accident investigation commission. Your job is to assistant employees of TAIC with their queries. The day is {datetime.now(timezone.utc)}. You should respond as if you are a senior accident investigator/research who is speaking to your colleagues. Keep your responses short and to the point.
+You are a expert working at the New Zealand transport accident investigation commission. Your job is to assistant employees of TAIC with their queries.
+The day is {datetime.now(timezone.utc)}. You should respond as if you are a senior accident investigator/research who is speaking to your colleagues.
+Keep your responses short and to the point.
 
 You will be provided the conversation history including the plan you have made.
 You are to act on your plan, this may involve calling functions to get more information or providing a response for the user.
 
-If you choose to respond to the user, ensure you provide a concise and accurate answer based on the information available. If you reference any reports, ensure you provide the report IDs. If you reference any other document you should provide the document type and document ID.
+If you choose to respond to the user, ensure you provide a concise and accurate answer based on the information available.
+If you reference any reports, ensure you provide the report IDs. If you reference any other document you should provide the document type and document ID.
 
 {general_info}
 """
 
 
 class Assistant:
-    """
-    Assistant class handles the chat conversation and AI calls.
-    """
+    """Assistant class handles the chat conversation and AI calls."""
 
     def __init__(
         self,
@@ -371,6 +430,7 @@ class Assistant:
         openai_api_key,
         openai_endpoint=None,
     ):
+        """Constructor."""
         print("[bold]Creating Chatbot[/bold]")
         self.searcher = searcher
         if openai_endpoint:
@@ -393,11 +453,20 @@ class Assistant:
 
     def provide_conversation_title(
         self,
-        history=None,
-        conversation_context_length=5,
+        history: list | None = None,
+        conversation_context_length: int = 5,
     ) -> str:
-        """
-        Read the conversation history and provide a short title for the conversation.
+        """Read the conversation history and provide a short title for the conversation.
+
+        Args:
+            history: History of the conversation (default: None).
+            conversation_context_length: int representing the length of the conversation history to summarise.
+
+        Returns:
+            Short title that summarises the conversation as a str.
+
+        Raises:
+            ValueError: If history in empty
         """
         if history is None:
             history = []
@@ -409,7 +478,7 @@ class Assistant:
         msg = [
             m["display"]["role"] + ": " + m["display"]["content"]
             for m in history
-            if m["display"]["role"] in ["user", "assistant"]
+            if m["display"]["role"] in {"user", "assistant"}
             and m["display"].get("metadata") is None
         ]
 
@@ -438,8 +507,10 @@ class Assistant:
         function_call,
         chunk,
     ) -> Generator[tuple[CompleteHistory, list[dict], bool], None, None]:
-        """
-        Complete a tool use by executing the tool and returning the result.
+        """Complete a tool use by executing the tool and returning the result.
+
+        Yields:
+            tuple: (updated_history, gradio_formatted_history, has_function_calls)
         """
         # Add function call to history
         history.add_function_call(chunk.item.to_dict())
@@ -464,11 +535,10 @@ class Assistant:
 
     def process_streamed_input(
         self,
-        response,
+        response: openai.Stream,
         history: CompleteHistory,
     ) -> Generator[tuple[CompleteHistory, list[dict], bool], None, None]:
-        """
-        Process a streamed response from OpenAI, handling both text and function calls.
+        """Process a streamed response from OpenAI, handling both text and function calls.
 
         Args:
             response: Streamed response from OpenAI API
@@ -476,9 +546,6 @@ class Assistant:
 
         Yields:
             tuple: (updated_history, gradio_formatted_history, has_function_calls)
-
-        Returns:
-            bool: True if any function calls were made (indicating we need another loop iteration)
         """
         function_calls = {}
         has_function_calls = False
@@ -523,14 +590,11 @@ class Assistant:
             ):
                 yield history, history.gradio_format(), has_function_calls
 
-        return has_function_calls
-
     def process_input(
         self,
         history: CompleteHistory,
     ) -> Generator[tuple[CompleteHistory, list[dict]], None, None]:
-        """
-        Process user input and generate a response using the orient/plan/act loop.
+        """Process user input and generate a response using the orient/plan/act loop.
 
         This is a generator that yields the updated history after each step, allowing
         the UI to update in real-time as the assistant thinks and responds.
@@ -546,8 +610,9 @@ class Assistant:
         Yields:
             tuple: (updated_history, gradio_formatted_history) after each update
 
-        Returns:
-            tuple: Final (history, gradio_formatted_history) when complete
+        Raises:
+            TypeError: If history is not an instance of CompleteHistory
+            ValueError: If history is empty
         """
         # Validate inputs
         if not isinstance(history, CompleteHistory):
@@ -619,5 +684,3 @@ class Assistant:
             # Otherwise, we're done - assistant has provided final response
             if not has_function_calls:
                 break
-
-        return history, history.gradio_format()

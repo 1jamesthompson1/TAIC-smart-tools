@@ -1,3 +1,5 @@
+"""Tests for the main application module."""
+
 import contextlib
 import os
 import uuid
@@ -21,10 +23,11 @@ from backend.Assistant import CompleteHistory
 
 
 class TestAppSmoke:
-    SUCCESS_STATUS = 200
     """Smoke tests for the web application."""
+    SUCCESS_STATUS = 200
 
-    def test_app_imports_without_error(self):
+    @staticmethod
+    def test_app_imports_without_error():
         """Test that the app module can be imported without errors."""
         try:
             import app  # noqa: PLC0415
@@ -39,17 +42,20 @@ class TestAppSmoke:
         assert response.status_code == self.SUCCESS_STATUS
         assert "TAIC smart tools" in response.text
 
-    def test_root_redirect_without_auth(self, client):
+    @staticmethod
+    def test_root_redirect_without_auth(client):
         """Test that root path redirects to login when not authenticated."""
         response = client.get("/")
         assert "Please login to continue" in response.text
 
-    def test_tool_redirect_without_auth(self, client):
+    @staticmethod
+    def test_tool_redirect_without_auth(client):
         """Test that /tools path redirects to login when not authenticated."""
         response = client.get("/tools")
         assert "Please login to continue" in response.text
 
-    def test_tool_with_auth(self, client):
+    @staticmethod
+    def test_tool_with_auth(client):
         """Test that /tools path loads when authenticated."""
         with patch("app.get_user") as mock_get_user:
             mock_get_user.return_value = "testuser"
@@ -70,13 +76,15 @@ class TestAppSmoke:
 
 
 class TestToolsFunctions:
+    """Tests for the core tool functions (search, assistant integration)."""
+
     @pytest.mark.skipif(
         not os.getenv("TEST_USE_REAL_SERVICES"),
         reason="Requires real services",
     )
-    def test_real_assistant_integration(self):
+    @staticmethod
+    def test_real_assistant_integration():
         """Test that the assistant is properly integrated."""
-
         assert assistant_instance is not None
         assert assistant_instance.searcher is not None
         assert len(assistant_instance.tools) > 0
@@ -94,19 +102,19 @@ class TestToolsFunctions:
             (0.0, "", True),
         ],
     )
-    def test_perform_search_functionality(self, relevance, query, expected_results):
+    @staticmethod
+    def test_perform_search_functionality(relevance, query, expected_results):
         """Test the perform_search function with real services."""
-
         # Test search execution
         (
             results,
             download_dict,
             message,
-            _doc_plot,
-            _mode_plot,
-            _year_hist,
-            _agency_plot,
-            _event_plot,
+            doc_plot,
+            mode_plot,
+            year_hist,
+            agency_plot,
+            event_plot,
         ) = perform_search(
             username="testuser",
             query=query,
@@ -124,17 +132,17 @@ class TestToolsFunctions:
         assert "settings" in download_dict
         assert "results" in download_dict
         if expected_results:
-            assert _doc_plot is not None
-            assert _mode_plot is not None
-            assert _year_hist is not None
-            assert _agency_plot is not None
-            assert _event_plot is not None
+            assert doc_plot is not None
+            assert mode_plot is not None
+            assert year_hist is not None
+            assert agency_plot is not None
+            assert event_plot is not None
         else:
-            assert _doc_plot is None
-            assert _mode_plot is None
-            assert _year_hist is None
-            assert _agency_plot is None
-            assert _event_plot is None
+            assert doc_plot is None
+            assert mode_plot is None
+            assert year_hist is None
+            assert agency_plot is None
+            assert event_plot is None
 
 
 class TestConversationFunctions:
@@ -144,9 +152,9 @@ class TestConversationFunctions:
         not os.getenv("TEST_USE_REAL_SERVICES"),
         reason="Requires real services",
     )
-    def test_conversation_functions(self):
+    @staticmethod
+    def test_conversation_functions():
         """Test conversation-related functions."""
-
         # Test getting user conversations (should work even with no conversations)
         conversations = get_user_conversations_metadata(Mock(username="testuser"))
         assert isinstance(conversations, list)
@@ -175,9 +183,9 @@ class TestConversationFunctions:
         not os.getenv("TEST_USE_REAL_SERVICES"),
         reason="Requires real services",
     )
-    def test_load_nonexistent_conversation_function(self):
+    @staticmethod
+    def test_load_nonexistent_conversation_function():
         """Test loading conversations."""
-
         # Test loading non-existent conversation
         conversation_id = str(uuid.uuid4())
         history, gradio_format, conv_id, title, _btn = load_conversation(
@@ -194,7 +202,8 @@ class TestConversationFunctions:
         not os.getenv("TEST_USE_REAL_SERVICES"),
         reason="Requires real services",
     )
-    def test_load_conversation_function(self):
+    @staticmethod
+    def test_load_conversation_function():
         """Test loading conversations a real conversation."""
         conversation_id = "1f6ebb26-abc4-4d7f-ab0b-da07c34ca73e"
 
@@ -211,7 +220,8 @@ class TestConversationFunctions:
         not os.getenv("TEST_USE_REAL_SERVICES"),
         reason="Requires real services",
     )
-    def test_delete_conversation_function(self):
+    @staticmethod
+    def test_delete_conversation_function():
         """Test the delete_conversation function with real services."""
         # First, create a conversation
         conversation_id = str(uuid.uuid4())
@@ -257,7 +267,8 @@ class TestConversationFunctions:
         )
         assert len(loaded_history) == 0  # Should be empty if deleted
 
-    def test_delete_conversation_cancelled(self):
+    @staticmethod
+    def test_delete_conversation_cancelled():
         """Test the delete_conversation function when deletion is cancelled."""
         request = Mock(username="testuser")
         current_conv = CompleteHistory([])
@@ -285,7 +296,8 @@ class TestConversationFunctions:
             4
         ].visible  # Button should be visible since current_conv_id is not None
 
-    def test_handle_example_select(self):
+    @staticmethod
+    def test_handle_example_select():
         """Test the handle_example_select function realistically."""
         selection = Mock()
         selection.value = {"text": "Example question text"}

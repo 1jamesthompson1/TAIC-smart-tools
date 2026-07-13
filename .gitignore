@@ -14,3 +14,6 @@ coverage.xml
 
 # IDE files
 .vscode/
+
+# MkDocs build output
+site/

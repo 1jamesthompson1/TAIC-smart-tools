@@ -17,6 +17,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: astral-sh/ruff-action@v3.5.1
+      with:
+        # Keep in sync with .pre-commit-config.yaml and pyproject.toml
+        version: 0.15.21
 
   test:
     runs-on: ubuntu-latest
@@ -34,10 +37,13 @@ jobs:
 
     - name: Download test environment file
       run: |
-        curl -o .env "https://${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}.blob.core.windows.net/envs/test.env?${{ secrets.AZURE_STORAGE_SAS_TOKEN }}"
+        curl -o .env "${{ secrets.TEST_ENV_URL }}"
 
     - name: Install dependencies
       run: uv sync --dev
+
+    - name: Build documentation site
+      run: uv run mkdocs build --quiet
 
     - name: Run unit tests with mocks
       run: uv run pytest tests/ -v --cov=backend --cov-report=term-missing

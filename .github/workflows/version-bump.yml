@@ -4,6 +4,8 @@ name: Auto Version Bump
 on:
   pull_request:
     branches: [ main ]
+  push:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       bump_type:
@@ -18,6 +20,7 @@ on:
 
 jobs:
   version-bump:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -93,3 +96,27 @@ jobs:
         git add .
         git commit -m "Bump version to $NEW_VERSION" || exit 0
         git push origin "HEAD:refs/heads/${{ github.head_ref }}"
+
+  tag:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+
+    - name: Create and push tag
+      run: |
+        VERSION=$(uv version --short)
+        git tag "v$VERSION"
+        git push origin "v$VERSION"

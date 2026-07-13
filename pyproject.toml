@@ -1,6 +1,6 @@
 [project]
 name = "TAIC_smart_tools"
-version = "0.7.1"
+version = "0.8.0"
 description = "An app that provides access to smart tools mainly a RAG agent which is built off a dataset of TAIC, ATSB and TSB reports to assist investigators and researchers."
 authors = [{ name = "James Thompson", email = "1jamesthompson1@gmail.com" }]
 requires-python = ">=3.10,<3.13"
@@ -34,6 +34,14 @@ dev = [
     "pytest-mock>=3.14.0,<4",
     "pytest-asyncio>=0.24.0,<0.25",
     "pre-commit>=3.0.0,<4",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.1",
+    "mkdocstrings[python]>=1.0.3",
+    "watchdog>=6.0.0",
+    "mkdocs-macros-plugin>=1.0.0",
+    "matplotlib>=3.10.8",
+    "tiktoken>=0.12.0",
+    "ruff==0.15.21",  # Keep in sync with .pre-commit-config.yaml and .github/workflows/ci.yml
 ]
 
 [tool.uv]
@@ -51,11 +59,15 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 88
 target-version = "py310"
+preview = true
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "C90", "I", "N", "UP", "YTT", "S", "BLE", "FBT", "B", "A", "COM", "C4", "DTZ", "T10", "DJ", "EM", "EXE", "FA", "ISC", "ICN", "G", "INP", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SLOT", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "ERA", "PD", "PGH", "PL", "TRY", "FLY", "NPY", "AIR", "PERF", "FURB", "LOG", "RUF"]
-ignore = ["E501", "N999"]  # line too long, handled by formatter
-per-file-ignores = {"tests/*.py" = ["S101"], "**/*.ipynb" = ["T201"]}
+select = ["E", "F", "W", "C90", "I", "N", "UP", "YTT", "S", "BLE", "FBT", "B", "A", "COM", "C4", "DTZ", "T10", "DJ", "EM", "EXE", "FA", "ISC", "ICN", "G", "INP", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SLOT", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "ERA", "PD", "PGH", "PL", "TRY", "FLY", "NPY", "AIR", "PERF", "FURB", "LOG", "RUF", "D", "DOC"]
+ignore = ["E501", "N999", "D203", "D213"]  # D203/D213 conflict with D211/D212
+per-file-ignores = {"tests/*.py" = ["S101"], "**/*.ipynb" = ["T201"], "working_files/*" = ["PLW0717"]}
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.format]
 quote-style = "double"

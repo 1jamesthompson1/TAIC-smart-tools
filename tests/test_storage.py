@@ -1,3 +1,5 @@
+"""Tests for the Storage module."""
+
 import datetime
 import os
 import uuid
@@ -17,7 +19,6 @@ from backend.Searching import SearchParams
 )
 def test_conversation_save_and_load(mock_assistant):
     """Test saving and loading conversations."""
-
     # Create a conversation
     conversation_id = str(uuid.uuid4())
     history = CompleteHistory([])
@@ -54,7 +55,6 @@ def test_conversation_save_and_load(mock_assistant):
 )
 def test_knowledge_search_logging():
     """Test that knowledge searches are logged."""
-
     searches = knowledge_search_store.get_user_search_history("testuser")
     pre_number = len(searches)
 
