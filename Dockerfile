@@ -24,6 +24,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
 
+# Build documentation site
+RUN uv run mkdocs build --quiet
+
 # Install necessary packages for Azure CLI and runtime dependencies
 RUN apt-get update && apt-get install -y \
     curl \
