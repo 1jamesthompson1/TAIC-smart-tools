@@ -41,15 +41,18 @@ The assistant can:
 ### Example Queries
 
 ```
-What were the contributing factors in marine accidents involving fishing vessels in 2020?
+What were the contributing factors in marine accidents involving fishing vessels in 2020-2024?
 ```
 
 ```
-Can you summarize report AO-2023-001?
+Can you summarize report AO-2023-001? 
 ```
 
 ```
-What safety recommendations have been made regarding fatigue in rail operations?
+I would like previous recommendations made by TAIC regarding this Safety issue:
+ KiwiRail’s current response to adverse weather conditions is not fit for purpose and is not consistent throughout New Zealand’s rail network, increasing the risk of a rail accident occurring.
+
+For each recommendation give me a summary of the report occurrence, the safety issue if present, and the recommendation made. Include url as well.
 ```
 
 ### Conversation Management
@@ -81,13 +84,16 @@ If you ask the Smart Assistant a question and are not happy with the answer, you
 
 ## Advanced Features
 
+### Keyboard shortcuts
+
+**Sending Messages vs Adding new lines:**
+To send the message use Shift + Enter. Press Enter to add a new line.
+
 ### Tool Usage
 
-The assistant can use multiple tools:
+The key power of the assistant is its ability to use tools to enhance its responses. Tools give it the ability to gather information from multiple sources, analyze data, and provide more accurate and relevant answers.
 
-- **Search Tool**: Finds relevant documents
-- **Read Report Tool**: Retrieves full report content
-- **Reasoning Tool**: Performs complex analytical thinking
+Check the little boxes before it responds to see which tools it is using.
 
 The assistant automatically selects appropriate tools based on your query.
 

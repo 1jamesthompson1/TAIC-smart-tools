@@ -37,7 +37,7 @@ jobs:
 
     - name: Download test environment file
       run: |
-        curl -o .env "https://${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}.blob.core.windows.net/envs/test.env?${{ secrets.AZURE_STORAGE_SAS_TOKEN }}"
+        curl -o .env "${{ secrets.TEST_ENV_URL }}"
 
     - name: Install dependencies
       run: uv sync --dev
