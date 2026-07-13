@@ -174,7 +174,7 @@ def get_user(request: Request):
 
 
 @app.get("/")
-def public(username: str = Depends(get_user)):  # noqa: B008
+def public(username: str = Depends(get_user)):
     """Redirect authenticated users to /tools, unauthenticated to login.
 
     Returns:
