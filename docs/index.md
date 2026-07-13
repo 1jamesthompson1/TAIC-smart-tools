@@ -30,9 +30,5 @@ TAIC Smart Tools consists of two main features:
 
 The application is currently deployed internally at TAIC. For information about deployment opportunities, contact James Thompson (1jamesthompson1 [at] gmail dot com).
 
-## Version
-
-Current version: **{{ git.short_tag[1:] if git.short_tag else "dev" }}**
-
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Continuous Integration](https://github.com/1jamesthompson1/TAIC-smart-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/1jamesthompson1/TAIC-smart-tools/actions/workflows/ci.yml)

@@ -118,5 +118,18 @@ jobs:
     - name: Create and push tag
       run: |
         VERSION=$(uv version --short)
+        if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+          echo "Tag v$VERSION already exists, skipping."
+          exit 0
+        fi
         git tag "v$VERSION"
         git push origin "v$VERSION"
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+    - name: Create GitHub Release
+      if: env.VERSION != ''
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ env.VERSION }}
+        name: v${{ env.VERSION }}
+        generate_release_notes: true
