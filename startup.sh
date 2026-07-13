@@ -11,7 +11,8 @@
 
 set -e  # Exit on any error
 
-echo "Starting TAIC Smart Assistant..."
+VERSION=$(grep -m1 '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+echo "TAIC Smart Assistant version ${VERSION}"
 
 # Check if vectordb directory already exists and has content
 if [ -d "/app/vectordb/all_document_types.lance" ] && [ "$(ls -A /app/vectordb/all_document_types.lance 2>/dev/null)" ]; then
