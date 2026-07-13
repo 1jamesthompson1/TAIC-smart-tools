@@ -17,6 +17,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: astral-sh/ruff-action@v3.5.1
+      with:
+        version: 0.15.21
 
   test:
     runs-on: ubuntu-latest

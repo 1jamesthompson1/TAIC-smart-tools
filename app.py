@@ -826,13 +826,13 @@ def perform_search(  # noqa: PLR0913, PLR0917
             "occurred_at": datetime.now(tz=timezone.utc).isoformat(),
         }
 
-    try:
-        if os.getenv("NO_LOGS", "false").lower() == "true":
-            print(
-                "[orange]⚠ NO_LOGS is set to true, skipping storing search log[/orange]",
-            )
-        else:
-            search_id = str(uuid.uuid4())
+    if os.getenv("NO_LOGS", "false").lower() == "true":
+        print(
+            "[orange]⚠ NO_LOGS is set to true, skipping storing search log[/orange]",
+        )
+    else:
+        search_id = str(uuid.uuid4())
+        try:
             knowledge_search_store.store_search_log(
                 username=username,
                 search_id=search_id,
@@ -846,8 +846,8 @@ def perform_search(  # noqa: PLR0913, PLR0917
                 error_info=error_info,
             )
             print(f"✓ Stored search log with ID: {search_id}")
-    except Exception as e:  # noqa: BLE001
-        print(f"✗ Failed to store search log: {e}")
+        except Exception as e:  # noqa: BLE001
+            print(f"✗ Failed to store search log: {e}")
 
     if error_info is not None:
         msg = f"An error has occurred during your search, please refresh page and try again.\nError: \n{error_info}"

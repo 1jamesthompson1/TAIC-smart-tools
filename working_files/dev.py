@@ -1,4 +1,3 @@
-# noqa: INP001
 """Development server for TAIC Smart Tools.
 
 Runs both the FastAPI/Gradio app and auto-rebuilds documentation when files change.

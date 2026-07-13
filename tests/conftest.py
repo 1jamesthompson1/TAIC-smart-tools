@@ -128,11 +128,10 @@ def mock_searcher(use_real_services):
         Searcher instance (real or mock).
     """
     if use_real_services:
-        searcher = Searching.Searcher(
+        yield Searching.Searcher(
             db_uri=os.getenv("VECTORDB_PATH"),
             table_name=os.getenv("VECTORDB_TABLE_NAME"),
         )
-        yield searcher
     else:
         with patch("backend.Searching.Searcher") as mock_searcher_class:
             mock_searcher = Mock()

@@ -10,7 +10,7 @@ import lancedb
 import numpy as np
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as plotly
+import plotly.graph_objects as go
 from azure.ai.inference import EmbeddingsClient
 from azure.core.credentials import AzureKeyCredential
 from lancedb.embeddings.base import TextEmbeddingFunction
@@ -451,7 +451,7 @@ class GraphMaker:
         self.context = context
 
     @staticmethod
-    def add_visual_layout(fig: plotly.Figure) -> plotly.Figure:
+    def add_visual_layout(fig: go.Figure) -> go.Figure:
         """Plot a graph.
 
         Returns:
@@ -472,7 +472,7 @@ class GraphMaker:
 
         return fig
 
-    def get_document_type_pie_chart(self) -> plotly.Figure:
+    def get_document_type_pie_chart(self) -> go.Figure:
         """Plot pie chart for 'document type'.
 
         Returns:
@@ -489,7 +489,7 @@ class GraphMaker:
 
         return self.add_visual_layout(fig)
 
-    def get_mode_pie_chart(self) -> plotly.Figure:
+    def get_mode_pie_chart(self) -> go.Figure:
         """Plot pie chart for 'mode'.
 
         Returns:
@@ -506,7 +506,7 @@ class GraphMaker:
 
         return self.add_visual_layout(fig)
 
-    def get_year_histogram(self) -> plotly.Figure:
+    def get_year_histogram(self) -> go.Figure:
         """Plot histogram per 'year'.
 
         Returns:
@@ -520,7 +520,7 @@ class GraphMaker:
         )
         return self.add_visual_layout(fig)
 
-    def get_most_common_event_types(self) -> plotly.Figure:
+    def get_most_common_event_types(self) -> go.Figure:
         """Plot pie chart for most common event types.
 
         Returns:
@@ -552,7 +552,7 @@ class GraphMaker:
 
         return self.add_visual_layout(fig)
 
-    def get_agency_pie_chart(self) -> plotly.Figure:
+    def get_agency_pie_chart(self) -> go.Figure:
         """Plot pie chart for 'agency'.
 
         Returns:

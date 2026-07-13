@@ -21,7 +21,7 @@ class Tool(ABC):
 
     @property
     def name(self) -> str:
-        """Get name of the tool.
+        """Name of the tool.
 
         Returns:
             str: Name of the tool.
@@ -30,7 +30,7 @@ class Tool(ABC):
 
     @property
     def description(self) -> str:
-        """Get description of the tool.
+        """Description of the tool.
 
         Returns:
             str: Description of the tool.
@@ -39,7 +39,7 @@ class Tool(ABC):
 
     @property
     def parameters(self) -> dict[str, Any]:
-        """Get parameters of the tool.
+        """Parameters of the tool.
 
         Returns:
             dict: Parameters of the tool.
