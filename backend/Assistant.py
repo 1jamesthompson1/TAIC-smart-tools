@@ -357,12 +357,46 @@ Just respond with the title and nothing else.
 Below is general information to help you contextualise the user's query.
 
 **Dataset Information:**
-The core of your tools are built around a vector database that contains accident reports from various transport accident investigation commissions, including:
-- New Zealand (TAIC)
-- Australia (ATSB)
-- Canada (TSB)
-There are {len(columns)} columns with {rows} rows.
-The columns available are: {", ".join(columns)}
+The core of your tools are built around a vector database that contains accident reports from:
+- **TAIC** (New Zealand Transport Accident Investigation Commission)
+- **ATSB** (Australian Transport Safety Bureau)
+- **TSB** (Transportation Safety Board of Canada)
+
+There are two tables — both share the same columns (except `vector`):
+
+**1. all_document_types** (~{rows} rows) — main search table with text snippets. Has a `vector` column for similarity search.
+
+**2. report_text** (~4k rows) — full report PDF text. No `vector` column.
+
+### Column Reference
+
+| Column | Type | Description |
+|---|---|---|
+| `document` | `str` | Text snippet (all_document_types) or full report text (report_text) |
+| `document_id` | `str` | Unique ID for this snippet (e.g. `ATSB_a_2020_033_sum_0`) |
+| `report_id` | `str` | TAIC-engine-specific report identifier (e.g. `ATSB_a_2020_033`) |
+| `agency_id` | `str` | Agency's own report number (ATSB: numeric, TAIC: `AO-YYYY-NNN`, TSB: `AYYPNNNN`) |
+| `year` | `int` | Occurrence year |
+| `mode` | `str` | Transport mode: `"0"`=aviation, `"1"`=rail, `"2"`=marine |
+| `agency` | `str` | `"TAIC"`, `"ATSB"`, or `"TSB"` |
+| `url` | `str` or `None` | Link to original report on agency website |
+| `document_type` | `str` | One of: `safety_issue`, `recommendation`, `section`, `summary`, or `report_text` (report_text table only) |
+| `location` | `str` or `None` | Standardized 4-part location |
+| `occurrence_date` | `datetime` or `None` | Occurrence date/time |
+| `occurrence_type` | `str` or `None` | Occurrence classification (mode-specific taxonomy) |
+| `fatalities` | `int` | Number of fatalities (0 if none) |
+| `injuries` | `int` | Number of injuries (0 if none) |
+| `publication_date` | `str` or `None` | Report publication date |
+| `metadata_json` | `str` or `None` | JSON with occurrence + mode-specific vehicle/personnel metadata |
+
+### metadata_json structure
+
+Contains occurrence metadata and mode-specific vehicle info (only the relevant mode key is present):
+
+- **Aviation**: `aircraft` array with entries having `aircraft_type`, `registration`, `make`, `model`, `number_of_engines`, `type_of_engines`, `operator`, `flight_type`, `persons_on_board_total`, `damage`, `pilots[]` (role, licence, age, experience)
+- **Rail**: `trains` array with entries having `train_type`, `train_number`, `length`, `weight`, `operator`, `operating_crew`
+- **Marine**: `vessels` array with entries having `vessel_name`, `vessel_type`, `classification`, `length`, `propulsion`, `owner_operator`, `port_of_registry`
+
 The data was last updated on {last_updated}.
 
 **Key Definitions:**
@@ -386,11 +420,14 @@ cover a single safety issue, or two or more related safety
 issues.
 
 **Metadata Filtering:**
-You can use the `metadata_filter` parameter on the search tool to filter by equipment or entity details stored in the report metadata. Use dot-path syntax for specific fields, e.g.:
-- `aircraft.0.aircraft_type=Helicopter` to find helicopter accidents
-- `aircraft.0.make=Robinson Helicopter Company` for a specific manufacturer
-- `vessel.0.vessel_name` or `train.0.train_type` for other modes
-Or just use plain text to search anywhere in the metadata, e.g. `"Helicopter"` or `"Lloyd"`.
+You can use the `metadata_filter` parameter on the search tool to filter by equipment/entity details in `metadata_json`. Use `key=value` to match a specific field, e.g.:
+- `type_of_engines=piston` for piston-engine aircraft
+- `aircraft_type=Helicopter` for helicopter accidents
+- `make=Robinson Helicopter Company` for a specific manufacturer
+- `vessel_name` or `train_type` for other modes
+- `classification=Lloyd's Register` for vessels classed by Lloyd's
+
+Or just use plain text to search anywhere in the metadata, e.g. `"piston"` or `"Helicopter"`.
 """
 
     @staticmethod

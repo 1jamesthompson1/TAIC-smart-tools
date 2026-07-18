@@ -68,53 +68,61 @@ class SearchTool(Tool):
     """Tool for searching the knowledge base."""
 
     _tool_name = "search"
-    _tool_description = """Search for safety issues and recommendations from the New Zealand Transport Accident Investigation Commission. This function searches a vector database.
-Example usage:
-search(query=\"What are the common causes of aviation accidents?\", search_type=\"vector\", year_range=[2010, 2023], document_type=[\"safety_issue\", \"recommendation\"], modes=[\"0\"], agencies=[\"TAIC\"])
+    _tool_description = """Search the all_document_types table (~145k rows) containing safety issues, recommendations, report sections, and summaries from TAIC, ATSB, and TSB.
+Use query="" (empty string) for filter-only searches.
+Document types:
 
-search(query=\"What safety issues are associated with runway incursions?\", search_type=\"vector\", year_range=[2000, 2023], document_type=[\"safety_issue\", \"recommendation\"], modes=[\"0\"], agencies=[\"TAIC\", \"ATSB\"])
+- safety_issue — AI extraction from report text + website scraping for ATSB post-2008. All agencies.
+  TAIC: confident extraction. TSB: inferred from "findings as to risk". ATSB post-2008: scraped; pre-2008: best-effort.
+- recommendation — website scraping for TSB/TAIC; AI extraction for ATSB. All agencies.
+  TSB/TAIC: scraped from websites. ATSB: AI extracted (confident); context/recipient/made fields are best-effort.
+- section — AI extraction. All agencies. Report text chunked by page/section from parsed PDF.
+- summary — website scraping. TAIC and ATSB only. Brief overviews from agency report webpages.
 
-search(query=\"What are some recent accidents?\", search_type=\"vector\", year_range=[2000, 2023], document_type=[\"summary\"], modes=[\"0\", \"1\", \"2\"], agencies=[\"ATSB\", \"TSB\", \"TAIC\"])
+Examples:
+search(query="What are the common causes of aviation accidents?", search_type="vector", year_range=[2010, 2023], document_type=["safety_issue", "recommendation"], modes=["0"], agencies=["TAIC"])
+search(query="", search_type="vector", year_range=[2020, 2023], modes=["0", "1"], agencies=["ATSB"])
+search(query="What safety issues are associated with runway incursions?", search_type="vector", year_range=[2000, 2023], document_type=["safety_issue", "recommendation"], modes=["0"], agencies=["TAIC", "ATSB"])
 """
     _tool_parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "The query to search for. If left as an empty string it will return all results that match the other parameters.",
+                "description": "Search query. Empty string returns all results matching other filters.",
             },
             "search_type": {
                 "type": "string",
                 "enum": ["fts", "vector"],
-                "description": "The type of search to perform. fts should be used if the query is asking a specific question about an organisation, etc. Otherwise for more general information use vector, it will embed your query and search the vector database.",
+                "description": "fts for specific questions (organisation names etc), vector for general semantic similarity.",
             },
             "year_range": {
                 "type": "array",
-                "description": f"An array specifying the start and end years for filtering results. Valid range is 2000-{datetime.now(tz=timezone.utc).year}.",
+                "description": f"Year range [start, end]. Valid range 2000-{datetime.now(tz=timezone.utc).year}.",
                 "items": {"type": "number"},
             },
             "document_type": {
                 "type": "array",
-                "description": "A list of document types to filter the search results. Safety issues and recommendations follow definitions given, while report sections are reports chunked into sections/pages, summary are brief overviews of the reports scrapped from the agencies report webpages only available for TAIC and ATSB. Valid types are 'safety_issue', 'recommendation', 'section' and 'summary'.",
+                "description": "Filter by document type: safety_issue, recommendation, section, or summary.",
                 "items": {"type": "string"},
             },
             "modes": {
                 "type": "array",
-                "description": "A list of modes to filter the search results. Valid modes are 0, 1, and 2. Which are aviation, rail, and marine respectively.",
+                "description": "Filter by mode: 0=aviation, 1=rail, 2=marine.",
                 "items": {"type": "string"},
             },
             "agencies": {
                 "type": "array",
-                "description": "A list of agencies to filter the search results. Valid agencies are TSB, ATSB, and TAIC. These are Transport Safety Board (Canada), Australian Transport Safety Board, and Transport Accident Investigation Commission (New Zealand) respectively.",
+                "description": "Filter by agency: TAIC, ATSB, or TSB.",
                 "items": {"type": "string"},
             },
             "location": {
                 "type": "string",
-                "description": "Filter by location text (e.g. 'Broome', 'Wellington'). Matches the location field of reports.",
+                "description": "Filter by location text (e.g. 'Broome', 'Wellington').",
             },
             "occurrence_type": {
                 "type": "array",
-                "description": "Filter by occurrence/event types (e.g. 'Engine failure or malfunction', 'Collision with terrain').",
+                "description": "Filter by occurrence type (e.g. 'Engine failure or malfunction').",
                 "items": {"type": "string"},
             },
             "fatalities_range": {
@@ -129,16 +137,16 @@ search(query=\"What are some recent accidents?\", search_type=\"vector\", year_r
             },
             "metadata_filter": {
                 "type": "string",
-                "description": "Filter on the metadata_json column. Two modes: (1) 'key=value' searches for a specific field, e.g. 'aircraft.0.aircraft_type=Helicopter' or 'aircraft.0.type_of_engines=piston'. (2) plain text searches anywhere in the metadata, e.g. 'Helicopter' or 'Lloyd' or 'piston'. Use this to find reports involving specific equipment, manufacturers, operators, or engine types.",
+                "description": "Filter metadata_json. 'key=value' targets a field (e.g. 'aircraft.0.aircraft_type=Helicopter'); plain text searches entire JSON.",
             },
             "report_ids": {
                 "type": "array",
-                "description": "Filter by a list of specific report IDs, e.g. ['ATSB_a_2000_648', 'TAIC_m_2002_001']. Use this when the user wants to search within specific known reports.",
+                "description": "Filter by report IDs (e.g. ['ATSB_a_2000_648']).",
                 "items": {"type": "string"},
             },
             "agency_ids": {
                 "type": "array",
-                "description": "Filter by a list of specific agency IDs, e.g. ['AO-2000-003', '200002648']. These are the agencies' own identifiers (not report IDs). Use this when the user references agency-specific report numbers.",
+                "description": "Filter by agency IDs (e.g. ['AO-2000-003', '200002648']).",
                 "items": {"type": "string"},
             },
         },
@@ -234,23 +242,17 @@ class ReadReportTool(Tool):
     """Tool for reading the full text of a report by report ID."""
 
     _tool_name = "read_report"
-    _tool_description = """Retrieve the full text of a transport accident investigation report by its report ID. Note the report ID is not the same as the agency ID and is TAIC engine specific.
-Use this when the user wants to read an entire report or see full details beyond what search snippets provide.
-The report ID is typically in the format like "ATSB_a_2000_648" or "TAIC_m_2002_201".
-
-Example usage:
-read_report(report_id=\"ATSB_a_2000_648\")
-"""
+    _tool_description = "Read the full text of a report from the report_text table (~4k rows). Provide report_id or agency_id."
     _tool_parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "report_id": {
                 "type": "string",
-                "description": "The report ID to retrieve (e.g. 'ATSB_a_2000_648', 'TAIC_m_2002_201'). This is the report_id field from search results.",
+                "description": "The report ID from search results (e.g. 'ATSB_a_2000_648').",
             },
             "agency_id": {
                 "type": "string",
-                "description": "The agency's own ID for the report (e.g. 'AO-2000-003' for TAIC, '200002648' for ATSB). This is the agency_id field from search results.",
+                "description": "The agency's own ID (e.g. 'AO-2000-003' for TAIC, '200002648' for ATSB).",
             },
         },
     }

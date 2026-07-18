@@ -87,6 +87,7 @@ nav:
       - Smart Assistant: user-guide/assistant.md
       - Knowledge Search: user-guide/search.md
       - Underlying Database: user-guide/database.md
+      - Data Pipeline: user-guide/data-pipeline.md
   - Developer Guide:
       - Getting Started: developer-guide/getting-started.md
       - Architecture: developer-guide/architecture.md
