@@ -108,6 +108,39 @@ search(query=\"What are some recent accidents?\", search_type=\"vector\", year_r
                 "description": "A list of agencies to filter the search results. Valid agencies are TSB, ATSB, and TAIC. These are Transport Safety Board (Canada), Australian Transport Safety Board, and Transport Accident Investigation Commission (New Zealand) respectively.",
                 "items": {"type": "string"},
             },
+            "location": {
+                "type": "string",
+                "description": "Filter by location text (e.g. 'Broome', 'Wellington'). Matches the location field of reports.",
+            },
+            "occurrence_type": {
+                "type": "array",
+                "description": "Filter by occurrence/event types (e.g. 'Engine failure or malfunction', 'Collision with terrain').",
+                "items": {"type": "string"},
+            },
+            "fatalities_range": {
+                "type": "array",
+                "description": "Filter by fatalities count range, e.g. [1, 10] for 1 to 10 fatalities.",
+                "items": {"type": "number"},
+            },
+            "injuries_range": {
+                "type": "array",
+                "description": "Filter by injuries count range, e.g. [0, 5] for 0 to 5 injuries.",
+                "items": {"type": "number"},
+            },
+            "metadata_filter": {
+                "type": "string",
+                "description": "Filter on the metadata_json column. Two modes: (1) 'key=value' searches for a specific field, e.g. 'aircraft.0.aircraft_type=Helicopter' or 'aircraft.0.type_of_engines=piston'. (2) plain text searches anywhere in the metadata, e.g. 'Helicopter' or 'Lloyd' or 'piston'. Use this to find reports involving specific equipment, manufacturers, operators, or engine types.",
+            },
+            "report_ids": {
+                "type": "array",
+                "description": "Filter by a list of specific report IDs, e.g. ['ATSB_a_2000_648', 'TAIC_m_2002_001']. Use this when the user wants to search within specific known reports.",
+                "items": {"type": "string"},
+            },
+            "agency_ids": {
+                "type": "array",
+                "description": "Filter by a list of specific agency IDs, e.g. ['AO-2000-003', '200002648']. These are the agencies' own identifiers (not report IDs). Use this when the user references agency-specific report numbers.",
+                "items": {"type": "string"},
+            },
         },
         "required": [
             "query",

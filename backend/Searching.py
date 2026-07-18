@@ -190,6 +190,10 @@ class SearchParams(NamedTuple):
         document_type (list[str]): Document type
         modes (list[str]): Modes to include
         agencies (list[str]): Investigation agencies to include
+        location (str | None): Location text to filter by.
+        occurrence_type (list[str]): Occurrence/event types to include.
+        fatalities_range (tuple[int, int] | None): Fatalities count range.
+        injuries_range (tuple[int, int] | None): Injuries count range.
     """
 
     query: str
@@ -198,6 +202,13 @@ class SearchParams(NamedTuple):
     document_type: list[str]
     modes: list[str]
     agencies: list[str]
+    location: str | None = None
+    occurrence_type: list[str] = []
+    fatalities_range: tuple[int, int] | None = None
+    injuries_range: tuple[int, int] | None = None
+    metadata_filter: str | None = None
+    report_ids: list[str] = []
+    agency_ids: list[str] = []
 
 
 class Searcher:
@@ -264,14 +275,29 @@ class Searcher:
         document_type: list[str],
         modes: list[str],
         agencies: list[str],
+        location: str | None = None,
+        occurrence_type: list[str] | None = None,
+        fatalities_range: tuple[int, int] | None = None,
+        injuries_range: tuple[int, int] | None = None,
+        metadata_filter: str | None = None,
+        report_ids: list[str] | None = None,
+        agency_ids: list[str] | None = None,
     ) -> str:
         """Generate the where statement of the query.
 
         Parameters:
-            year_range (tuple[int, int]): Year range for the search
-            document_type (list[str]): Document type
-            modes (list[str]): Modes to include
-            agencies (list[str]): Investigation agencies to include
+            year_range: Year range for the search
+            document_type: Document types to include
+            modes: Modes to include
+            agencies: Investigation agencies to include
+            location: Location text filter
+            occurrence_type: Occurrence/event types to include
+            fatalities_range: Fatalities count range
+            injuries_range: Injuries count range
+            metadata_filter: Dot-path or free-text filter on metadata_json column
+                (e.g. \"aircraft.0.type_of_engines=piston\" or \"Helicopter\")
+            report_ids: Filter by specific report IDs (e.g. [\"ATSB_a_2000_648\"])
+            agency_ids: Filter by specific agency IDs (e.g. [\"AO-2000-003\", \"200002648\"])
 
         Returns:
             str: Where clause as text.
@@ -292,6 +318,44 @@ class Searcher:
             where_statement.append(f"agency in {tuple(agencies)}")
         elif agencies and len(agencies) == 1:
             where_statement.append(f"agency = '{agencies[0]}'")
+        if location:
+            where_statement.append(f"location like '%{location}%'")
+        if occurrence_type and len(occurrence_type) > 1:
+            ot_list = ", ".join(f'"{ot}"' for ot in occurrence_type)
+            where_statement.append(f"occurrence_type in ({ot_list})")
+        elif occurrence_type and len(occurrence_type) == 1:
+            where_statement.append(f"occurrence_type = '{occurrence_type[0]}'")
+        if fatalities_range:
+            where_statement.append(
+                f"fatalities >= {int(fatalities_range[0])} and fatalities <= {int(fatalities_range[1])}",
+            )
+        if injuries_range:
+            where_statement.append(
+                f"injuries >= {int(injuries_range[0])} and injuries <= {int(injuries_range[1])}",
+            )
+        if metadata_filter:
+            if "=" in metadata_filter:
+                key_path, value = metadata_filter.split("=", 1)
+                key_name = key_path.strip().rsplit(".", 1)[-1]
+                safe_value = value.strip().replace("'", "''")
+                where_statement.append(
+                    f'metadata_json like \'%"{key_name}"%:"{safe_value}"%\'',
+                )
+            else:
+                safe_value = metadata_filter.strip().replace("'", "''")
+                where_statement.append(
+                    f"metadata_json like '%{safe_value}%'",
+                )
+        if report_ids and len(report_ids) > 1:
+            rid_list = ", ".join(f"'{r}'" for r in report_ids)
+            where_statement.append(f"report_id in ({rid_list})")
+        elif report_ids and len(report_ids) == 1:
+            where_statement.append(f"report_id = '{report_ids[0]}'")
+        if agency_ids and len(agency_ids) > 1:
+            aid_list = ", ".join(f"'{a}'" for a in agency_ids)
+            where_statement.append(f"agency_id in ({aid_list})")
+        elif agency_ids and len(agency_ids) == 1:
+            where_statement.append(f"agency_id = '{agency_ids[0]}'")
 
         return " AND ".join(where_statement)
 
@@ -365,6 +429,13 @@ class Searcher:
             document_type=params.document_type,
             modes=params.modes,
             agencies=params.agencies,
+            location=params.location,
+            occurrence_type=params.occurrence_type,
+            fatalities_range=params.fatalities_range,
+            injuries_range=params.injuries_range,
+            metadata_filter=params.metadata_filter,
+            report_ids=params.report_ids,
+            agency_ids=params.agency_ids,
         )
 
         final_query: list[float] | str | None = None
@@ -431,9 +502,9 @@ class Searcher:
             f"[bold green]Found {info['relevant_results']} relevant results for query: {params.query}[/bold green]",
         )
 
-        # Convert mode back to strings
+        mode_map = {"0": "aviation", "1": "rail", "2": "maritime"}
         results["mode"] = results["mode"].apply(
-            lambda x: ["aviation", "rail", "maritime"][int(x)],
+            lambda x: mode_map.get(str(x).strip(), str(x)),
         )
 
         graph_maker = GraphMaker(results)
@@ -476,6 +547,13 @@ class Searcher:
             document_type=params.document_type,
             modes=params.modes,
             agencies=params.agencies,
+            location=params.location,
+            occurrence_type=params.occurrence_type,
+            fatalities_range=params.fatalities_range,
+            injuries_range=params.injuries_range,
+            metadata_filter=params.metadata_filter,
+            report_ids=params.report_ids,
+            agency_ids=params.agency_ids,
         )
 
         self.__print_search_query(params.query, params.query, where_statement)
@@ -631,16 +709,16 @@ class GraphMaker:
             A pie chart graph.
         """
         context_df = self.context
-        type_counts = context_df.groupby("type")["document"].count()
+        type_counts = context_df.groupby("occurrence_type")["document"].count()
 
         top_5_types = type_counts.nlargest(5).reset_index()
 
-        others_count = type_counts[~type_counts.index.isin(top_5_types["type"])].sum()
+        others_count = type_counts[~type_counts.index.isin(top_5_types["occurrence_type"])].sum()
 
         combined_df = pd.concat(
             [
                 top_5_types,
-                pd.DataFrame([["Others", others_count]], columns=["type", "document"]),
+                pd.DataFrame([["Others", others_count]], columns=["occurrence_type", "document"]),
             ],
             ignore_index=True,
         )

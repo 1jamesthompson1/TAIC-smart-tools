@@ -301,7 +301,7 @@ def create_or_update_conversation(
     Returns:
         Updated conversation title, or None if history is empty.
     """
-    if history == []:  # ignore instance when history is empty
+    if not history:  # ignore instance when history is empty
         return None
 
     username = request.username

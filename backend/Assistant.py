@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import openai
 from rich import print  # noqa: A004
 
-from .AssistantTools import DocumentationTool, SearchTool
+from .AssistantTools import DocumentationTool, ReadReportTool, SearchTool
 
 
 # Reason for noqa:
@@ -384,6 +384,13 @@ either as Risk Controls or Organisational Influences.
 Safety theme - Indication of recurring circumstances or causes, either across transport modes or over time. A safety theme may
 cover a single safety issue, or two or more related safety
 issues.
+
+**Metadata Filtering:**
+You can use the `metadata_filter` parameter on the search tool to filter by equipment or entity details stored in the report metadata. Use dot-path syntax for specific fields, e.g.:
+- `aircraft.0.aircraft_type=Helicopter` to find helicopter accidents
+- `aircraft.0.make=Robinson Helicopter Company` for a specific manufacturer
+- `vessel.0.vessel_name` or `train.0.train_type` for other modes
+Or just use plain text to search anywhere in the metadata, e.g. `"Helicopter"` or `"Lloyd"`.
 """
 
     @staticmethod
@@ -434,10 +441,9 @@ class Assistant:
         print("[bold]Creating Chatbot[/bold]")
         self.searcher = searcher
         if openai_endpoint:
-            self.openai_client = openai.AzureOpenAI(
-                api_version="2025-04-01-preview",
+            self.openai_client = openai.OpenAI(
                 api_key=openai_api_key,
-                azure_endpoint=openai_endpoint,
+                base_url=openai_endpoint,
             )
         else:
             self.openai_client = openai.OpenAI(api_key=openai_api_key)
@@ -445,6 +451,7 @@ class Assistant:
         # Initialize tools
         self.tools = [
             SearchTool(searcher),
+            ReadReportTool(searcher),
             DocumentationTool(),
         ]
         self.tool_map = {tool.name: tool for tool in self.tools}
@@ -487,7 +494,7 @@ class Assistant:
 
         title = (
             self.openai_client.responses.create(
-                model="gpt-5-mini",
+                model="gpt-5.6-luna",
                 instructions=AssistantPrompts.conversation_title(),
                 input=f"Here is the last {conversation_context_length} messages from the conversation history: {msg}. Can you please provide a title to help?",
                 store=False,
@@ -638,7 +645,7 @@ class Assistant:
             # STEP 1: Orient and Plan
             # Assistant thinks about the query and plans how to respond
             orient_plan_response = self.openai_client.responses.create(
-                model="gpt-4.1",
+                model="gpt-5.6-luna",
                 instructions=orient_plan_system_message,
                 input=history.openai_format(),
                 tools=[tool.to_openai_format() for tool in self.tools],
@@ -660,7 +667,7 @@ class Assistant:
             # STEP 2: Act on the Plan
             # Assistant executes the plan (may call tools or provide final response)
             act_response = self.openai_client.responses.create(
-                model="gpt-4.1",
+                model="gpt-5.6-luna",
                 instructions=act_system_message,
                 input=history.openai_format(),
                 tools=[tool.to_openai_format() for tool in self.tools],
