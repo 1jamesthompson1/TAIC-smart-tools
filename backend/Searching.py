@@ -224,6 +224,12 @@ class Searcher:
             print(f"Only {self.vector_db.table_names()} exist")
             raise
 
+        try:
+            self.report_text_table = self.vector_db.open_table("report_text")
+        except ValueError:
+            print("[yellow]Warning: report_text table not found[/yellow]")
+            self.report_text_table = None
+
         self.last_updated = self.all_document_types_table.list_versions()[-1][
             "timestamp"
         ].strftime("%Y-%m-%d")
@@ -441,6 +447,104 @@ class Searcher:
         }
 
         return results, info, plots
+
+
+    def knowledge_search_report_text(
+        self,
+        params: SearchParams,
+        limit: int = 50,
+    ) -> tuple[pd.DataFrame, dict]:
+        """Search the report_text table using FTS.
+
+        Parameters:
+            params: Search parameters.
+            limit: Maximum number of results. Defaults to 50.
+
+        Returns:
+            results: Results as a Pandas DataFrame.
+            info: Additional info dict.
+
+        Raises:
+            ValueError: If report_text table is not available.
+        """
+        if self.report_text_table is None:
+            msg = "report_text table is not available"
+            raise ValueError(msg)
+
+        where_statement = self.__get_where_statement(
+            year_range=params.year_range,
+            document_type=params.document_type,
+            modes=params.modes,
+            agencies=params.agencies,
+        )
+
+        self.__print_search_query(params.query, params.query, where_statement)
+
+        search = self.report_text_table.search(
+            params.query,
+            query_type="fts",
+        )
+
+        if where_statement:
+            results = search.where(where_statement, prefilter=True).limit(limit).to_pandas()
+        else:
+            results = search.limit(limit).to_pandas()
+
+        if "_score" in results.columns:
+            results = results.rename(columns={"_score": "relevance"})
+            results = results.sort_values(by=["relevance"], ascending=False)
+            results = results.reset_index(drop=True)
+
+        print(
+            f"[bold green]Found {len(results)} results from report_text for query: {params.query}[/bold green]",
+        )
+
+        info = {"total_results": len(results)}
+
+        return results, info
+
+    def read_report(self, report_id: str | None = None, agency_id: str | None = None) -> str | None:
+        """Retrieve the full text of a report from the report_text table.
+
+        Parameters:
+            report_id: The report ID to look up (e.g. \"ATSB_a_2000_648\").
+            agency_id: The agency's own ID to look up (e.g. \"AO-2000-003\").
+
+        Returns:
+            The full document text, or None if not found.
+        """
+        if self.report_text_table is None:
+            msg = "report_text table is not available"
+            raise ValueError(msg)
+
+        if not report_id and not agency_id:
+            msg = "Either report_id or agency_id must be provided"
+            raise ValueError(msg)
+
+        if report_id:
+            filter_expr = f"report_id = '{report_id}'"
+            identifier = report_id
+        else:
+            filter_expr = f"agency_id = '{agency_id}'"
+            identifier = agency_id
+
+        results = (
+            self.report_text_table.search()
+            .where(filter_expr)
+            .limit(1)
+            .to_pandas()
+        )
+
+        if results.empty:
+            print(f"[yellow]No report found with {identifier}[/yellow]")
+            return None
+
+        row = results.iloc[0]
+        found_id = row.get("report_id", identifier)
+        print(
+            f"[bold green]Found report {found_id} with {len(row['document'])} characters[/bold green]",
+        )
+        return row["document"]
 
 
 class GraphMaker:

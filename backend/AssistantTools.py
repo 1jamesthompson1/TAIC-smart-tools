@@ -195,3 +195,60 @@ class DocumentationTool(Tool):
                 found_documents.append("User documentation file not found.")
 
         return "\n\n".join(found_documents)
+
+
+class ReadReportTool(Tool):
+    """Tool for reading the full text of a report by report ID."""
+
+    _tool_name = "read_report"
+    _tool_description = """Retrieve the full text of a transport accident investigation report by its report ID. Note the report ID is not the same as the agency ID and is TAIC engine specific.
+Use this when the user wants to read an entire report or see full details beyond what search snippets provide.
+The report ID is typically in the format like "ATSB_a_2000_648" or "TAIC_m_2002_201".
+
+Example usage:
+read_report(report_id=\"ATSB_a_2000_648\")
+"""
+    _tool_parameters: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "report_id": {
+                "type": "string",
+                "description": "The report ID to retrieve (e.g. 'ATSB_a_2000_648', 'TAIC_m_2002_201'). This is the report_id field from search results.",
+            },
+            "agency_id": {
+                "type": "string",
+                "description": "The agency's own ID for the report (e.g. 'AO-2000-003' for TAIC, '200002648' for ATSB). This is the agency_id field from search results.",
+            },
+        },
+    }
+
+    def __init__(self, searcher: Searcher):
+        """Constructor.
+
+        Parameters:
+            searcher: Searcher instance with access to the report_text table.
+        """
+        self.searcher = searcher
+
+    def execute(self, **kwargs) -> str:
+        """Execute a report lookup.
+
+        Returns:
+            str: The full text of the report, or a not-found message.
+        """
+        report_id = kwargs.get("report_id", "")
+        agency_id = kwargs.get("agency_id", "")
+
+        if not report_id and not agency_id:
+            return "Either report_id or agency_id must be provided."
+
+        result = self.searcher.read_report(
+            report_id=report_id or None,
+            agency_id=agency_id or None,
+        )
+
+        if result is None:
+            identifier = report_id or agency_id
+            return f"No report found with '{identifier}'."
+
+        return result
