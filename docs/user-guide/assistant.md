@@ -50,7 +50,7 @@ Can you summarize report AO-2023-001?
 
 ```
 I would like previous recommendations made by TAIC regarding this Safety issue:
- KiwiRail’s current response to adverse weather conditions is not fit for purpose and is not consistent throughout New Zealand’s rail network, increasing the risk of a rail accident occurring.
+ Operator’s response to adverse weather conditions is not fit for purpose and is not consistent throughout New Zealand, increasing the risk of an accident occurring.
 
 For each recommendation give me a summary of the report occurrence, the safety issue if present, and the recommendation made. Include url as well.
 ```
