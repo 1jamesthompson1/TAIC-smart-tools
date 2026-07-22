@@ -69,7 +69,7 @@ class SearchTool(Tool):
 
     _tool_name = "search"
     _tool_description = """Search the all_document_types table (~145k rows) containing safety issues, recommendations, report sections, and summaries from TAIC, ATSB, and TSB.
-Use query="" (empty string) for filter-only searches.
+Use query="" (empty string) for filter-only searches — this returns all results matching the filters without a text relevance ranking.
 Document types:
 
 - safety_issue — AI extraction from report text + website scraping for ATSB post-2008. All agencies.
@@ -80,9 +80,26 @@ Document types:
 - summary — website scraping. TAIC and ATSB only. Brief overviews from agency report webpages.
 
 Examples:
-search(query="What are the common causes of aviation accidents?", search_type="vector", year_range=[2010, 2023], document_type=["safety_issue", "recommendation"], modes=["0"], agencies=["TAIC"])
-search(query="", search_type="vector", year_range=[2020, 2023], modes=["0", "1"], agencies=["ATSB"])
-search(query="What safety issues are associated with runway incursions?", search_type="vector", year_range=[2000, 2023], document_type=["safety_issue", "recommendation"], modes=["0"], agencies=["TAIC", "ATSB"])
+# Filter-only: find all helicopter safety issues since 2020
+search(query="", year_range=[2020, 2026], document_type=["safety_issue"], modes=["0"], agencies=["TAIC", "ATSB", "TSB"], metadata_filter="aircraft_type=Helicopter")
+
+# Filter-only: find all rail accidents since 2010
+search(query="", year_range=[2010, 2023], document_type=["summary", "section"], modes=["1"], agencies=["TAIC", "ATSB"])
+
+# Filter-only: rail accidents with fatalities
+search(query="", year_range=[2000, 2026], document_type=["summary", "section", "safety_issue"], modes=["1"], agencies=["TAIC", "ATSB", "TSB"], fatalities_range=[1, 100])
+
+# Filter-only: all accidents with 5+ fatalities (no upper bound)
+search(query="", year_range=[2000, 2026], document_type=["summary", "section", "safety_issue"], modes=["0", "1", "2"], agencies=["TAIC", "ATSB", "TSB"], fatalities_range=[5, -1])
+
+# Semantic search: Trying to find recommendations or safety issues that are simliar.
+search(query="operate its ships against international and domestic requirements", search_type="vector", year_range=[2010, 2023], document_type=["safety_issue", "recommendation"], modes=["0"], agencies=["TAIC"])
+
+# Filter with text — find helicopter accidents mentioning engine failure
+search(query="engine failure", search_type="fts", year_range=[2020, 2026], document_type=["summary", "section"], modes=["0"], agencies=["TAIC", "ATSB", "TSB"], metadata_filter="aircraft_type=Helicopter")
+
+# Filter-only by metadata: find piston-engine aircraft accidents
+search(query="", year_range=[2000, 2023], document_type=["safety_issue", "section"], modes=["0"], agencies=["TAIC", "ATSB"], metadata_filter="type_of_engines=piston")
 """
     _tool_parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
@@ -94,7 +111,7 @@ search(query="What safety issues are associated with runway incursions?", search
             "search_type": {
                 "type": "string",
                 "enum": ["fts", "vector"],
-                "description": "fts for specific questions (organisation names etc), vector for general semantic similarity.",
+                "description": "Optional. fts for specific keyword matches (organisation names etc), vector for general semantic similarity. Omit for filter-only searches (query='').",
             },
             "year_range": {
                 "type": "array",
@@ -127,12 +144,12 @@ search(query="What safety issues are associated with runway incursions?", search
             },
             "fatalities_range": {
                 "type": "array",
-                "description": "Filter by fatalities count range, e.g. [1, 10] for 1 to 10 fatalities.",
+                "description": "Filter by fatalities count range, e.g. [1, 10] for 1 to 10 fatalities. Use -1 for no upper bound, e.g. [1, -1] for 1+ fatalities.",
                 "items": {"type": "number"},
             },
             "injuries_range": {
                 "type": "array",
-                "description": "Filter by injuries count range, e.g. [0, 5] for 0 to 5 injuries.",
+                "description": "Filter by injuries count range, e.g. [0, 5] for 0 to 5 injuries. Use -1 for no upper bound, e.g. [3, -1] for 3+ injuries.",
                 "items": {"type": "number"},
             },
             "metadata_filter": {
@@ -152,7 +169,6 @@ search(query="What safety issues are associated with runway incursions?", search
         },
         "required": [
             "query",
-            "search_type",
             "year_range",
             "document_type",
             "modes",

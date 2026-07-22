@@ -283,7 +283,7 @@ class Searcher:
         report_ids: list[str] | None = None,
         agency_ids: list[str] | None = None,
     ) -> str:
-        """Generate the where statement of the query.
+        r"""Generate the where statement of the query.
 
         Parameters:
             year_range: Year range for the search
@@ -326,20 +326,30 @@ class Searcher:
         elif occurrence_type and len(occurrence_type) == 1:
             where_statement.append(f"occurrence_type = '{occurrence_type[0]}'")
         if fatalities_range:
-            where_statement.append(
-                f"fatalities >= {int(fatalities_range[0])} and fatalities <= {int(fatalities_range[1])}",
-            )
+            if int(fatalities_range[1]) == -1:
+                where_statement.append(
+                    f"fatalities >= {int(fatalities_range[0])}",
+                )
+            else:
+                where_statement.append(
+                    f"fatalities >= {int(fatalities_range[0])} and fatalities <= {int(fatalities_range[1])}",
+                )
         if injuries_range:
-            where_statement.append(
-                f"injuries >= {int(injuries_range[0])} and injuries <= {int(injuries_range[1])}",
-            )
+            if int(injuries_range[1]) == -1:
+                where_statement.append(
+                    f"injuries >= {int(injuries_range[0])}",
+                )
+            else:
+                where_statement.append(
+                    f"injuries >= {int(injuries_range[0])} and injuries <= {int(injuries_range[1])}",
+                )
         if metadata_filter:
             if "=" in metadata_filter:
                 key_path, value = metadata_filter.split("=", 1)
                 key_name = key_path.strip().rsplit(".", 1)[-1]
                 safe_value = value.strip().replace("'", "''")
                 where_statement.append(
-                    f'metadata_json like \'%"{key_name}"%:"{safe_value}"%\'',
+                    f'metadata_json like \'%"{key_name}"%: "{safe_value}"%\'',
                 )
             else:
                 safe_value = metadata_filter.strip().replace("'", "''")
