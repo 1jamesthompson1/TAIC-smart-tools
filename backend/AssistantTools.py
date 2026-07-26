@@ -2,6 +2,7 @@
 
 import json
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
@@ -600,59 +601,103 @@ Call with a skill name (e.g. 'finding-previous-occurrences') to get the complete
 
 
 class DelegateTool(Tool):
-    """Tool for delegating data to another LLM call for out-of-context-window analysis.
+    """Tool for delegating tool execution + analysis to a separate LLM call.
 
-    Use this when you have large amounts of text (many search results, long reports) that would
-    overflow your context window. This tool sends the content to a fresh AI instance that only
-    sees the provided data plus your instructions, and returns a concise summary/analysis.
+    Use this when you have large amounts of data that would overflow your context
+    window. You provide one or more tool calls to execute, their results are sent
+    to a fresh AI instance that only sees that data plus your instructions, and
+    returns a concise summary/analysis.
+
+    Tool calls run in parallel when possible.
     """
 
     _tool_name = "delegate_analysis"
-    _tool_description = """Send data (search results, reports, etc.) to a separate AI for out-of-context analysis.
-Useful when you have too much data to fit in your context window. The data plus your instructions
-are sent to a fresh AI that only sees that content, and returns a focused analysis.
+    _tool_description = """Execute one or more tools and analyse their combined output with a separate AI.
+Useful when you have too much data to fit in your context window. You specify tool calls
+to run (e.g. search_tool, read_report) plus analysis instructions. The tools are executed,
+and their results are sent to a fresh AI that only sees that content.
 
 Examples:
-- delegate_analysis(data="[long search results...]", instruction="Summarise the common safety themes across these results")
-- delegate_analysis(data="[full report text...]", instruction="List all safety issues mentioned in this report")
+- delegate_analysis(tool_calls=[{"name": "search_tool", "arguments": {"query": "engine failure helicopter", "limit": 50}}], instruction="Summarise the common safety themes")
+- delegate_analysis(tool_calls=[{"name": "read_report", "arguments": {"report_id": "..."}}], instruction="List all safety issues")
+- Multiple: delegate_analysis(tool_calls=[{"name": "search_tool", "arguments": {...}}, {"name": "search_tool", "arguments": {...}}], instruction="Compare and contrast findings")
 """
     _tool_parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
-            "data": {
-                "type": "string",
-                "description": "The data/content to analyse (e.g. search results HTML, report text).",
+            "tool_calls": {
+                "type": "array",
+                "description": "List of tool calls to execute. Each has 'name' (tool name) and 'arguments' (dict of params). Results are collected and analysed together.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Tool name to call (e.g. search_tool, read_report, find_relevant_reports).",
+                        },
+                        "arguments": {
+                            "type": "object",
+                            "description": "Arguments to pass to the tool.",
+                        },
+                    },
+                    "required": ["name", "arguments"],
+                },
+                "minItems": 1,
             },
             "instruction": {
                 "type": "string",
-                "description": "Instructions for the analysis. Be specific about what you want extracted.",
+                "description": "Instructions for the analysis. Be specific about what you want extracted from the combined results.",
             },
         },
-        "required": ["data", "instruction"],
+        "required": ["tool_calls", "instruction"],
     }
 
-    def __init__(self, client):
+    def __init__(self, client, tool_map):
         self.client = client
+        self.tool_map = tool_map
 
     def execute(self, **kwargs) -> str:
-        """Send data to a fresh LLM call for analysis.
+        """Execute tool calls and send results to a fresh LLM for analysis.
 
         Returns:
             str: The analysis result from the delegated AI call.
         """
-        data = kwargs.get("data", "")
+        tool_calls = kwargs.get("tool_calls", [])
         instruction = kwargs.get("instruction", "")
 
-        if not data or not instruction:
-            return "Both data and instruction are required."
+        if not tool_calls or not instruction:
+            return "Both tool_calls and instruction are required."
 
-        system_prompt = """You are an expert accident investigator and analyst. You will be given data and asked to analyse it.
-        Provide a concise, well-structured analysis. Focus on extracting key findings, patterns, and insights."""
+        results = [None] * len(tool_calls)
+
+        def run_tool(i, tc):
+            tool_name = tc.get("name", "")
+            tool_args = tc.get("arguments", {})
+            tool = self.tool_map.get(tool_name)
+            if not tool:
+                output = f"Error: Unknown tool '{tool_name}'"
+            else:
+                try:
+                    output = tool.execute(**tool_args)
+                except Exception as e:
+                    output = f"Error executing {tool_name}: {e}"
+            return i, tool_name, tool_args, output
+
+        with ThreadPoolExecutor(max_workers=len(tool_calls)) as executor:
+            futures = [executor.submit(run_tool, i, tc) for i, tc in enumerate(tool_calls)]
+            for future in as_completed(futures):
+                i, tool_name, tool_args, output = future.result()
+                results[i] = f"## Tool: {tool_name}\nArguments: {json.dumps(tool_args, default=str)}\n\nOutput:\n{output}"
+
+        combined_data = "\n\n---\n\n".join(results)
+
+        system_prompt = """You are an expert accident investigator and analyst. You will be given the combined output of one or more tool calls and asked to analyse it.
+Provide a concise, well-structured analysis. Focus on extracting key findings, patterns, and insights."""
 
         response = self.client.responses.create(
             model="gpt-5.6-luna",
             instructions=system_prompt,
-            input=f"## Data\n\n{data}\n\n## Instructions\n\n{instruction}",
+            input=f"## Tool Results\n\n{combined_data}\n\n## Instructions\n\n{instruction}",
             store=False,
         )
 

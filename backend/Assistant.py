@@ -539,9 +539,12 @@ class Assistant:
             DocumentationTool(),
             self.analyze_tool,
             FindRelevantReports(searcher),
-            DelegateTool(self.openai_client),
         ]
         self.tool_map = {tool.name: tool for tool in self.tools}
+
+        delegate = DelegateTool(self.openai_client, self.tool_map)
+        self.tools.append(delegate)
+        self.tool_map[delegate.name] = delegate
 
         print("[bold]Chatbot created[/bold]")
 
