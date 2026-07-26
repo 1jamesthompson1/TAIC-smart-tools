@@ -90,4 +90,14 @@ graph LR
 - `AZURE_STORAGE_SAS_TOKEN` - Access to test config  
 - `AZURE_STORAGE_ACCOUNT_NAME` - Storage account name  
 
+## Testing a Deployment Before Merging (TAIC specific)
+
+```bash
+# Run the sync pipeline
+az pipelines run --name "sync"
+
+# Deploy the app to a specific slot
+az pipelines run --name "deploy" --variables "run-branch=$(git branch --show-current) slot-name=dev"  --open
+```  
+
 

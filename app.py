@@ -1013,13 +1013,13 @@ with gr.Blocks(  # noqa: PLR1702
                 render=False,
                 examples=[
                     {
-                        "text": "Can you please provide a summary of recent safety issues identified by TAIC in the last 2 years?",
+                        "text": "Find all safety issues about inadequate supervision across all agencies and modes since 2015. How many does each agency have?",
                     },
                     {
-                        "text": "What are the common threads that run through aviation safety incidents investigated by TAIC over the last decade? Is this different from what is seen in ATSB aviation incident reports?",
+                        "text": "Search for helicopter accidents mentioning engine failure in the last 10 years. How many unique reports, and what were the most common occurrence types?",
                     },
                     {
-                        "text": "How many times has the 'International Maritime Organization' been mentioned in TAIC's investigation reports?",
+                        "text": "Compare the safety issues TAIC and ATSB identified in aviation between 2020-2025. What are the top 3 differences in focus areas between the two agencies?",
                     },
                 ],
                 placeholder="#### Welcome to the TAIC smart assistant\nI have access to TAIC's, ATSB's and TSB's investigations reports, safety issues and recommendations from 2000 to present day. Ask me anything in the box below, or try out one of the example questions!\n\n*Please note that while I strive to provide accurate and helpful information, I may occasionally generate incorrect or nonsensical responses. Always verify critical information from authoritative sources.*\n\n##### Example queries (click one to try out)",

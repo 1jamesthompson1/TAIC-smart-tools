@@ -60,7 +60,7 @@ def test_complete_history_gradio_format():
 
     gradio_format = history.gradio_format()
     expected_message_len = (
-        6  # user, assistant, user, thought, function call, function result
+        5  # user, assistant, user, thought, collapsed function call + result
     )
     assert len(gradio_format) == expected_message_len
     assert gradio_format[0]["role"] == "user"
@@ -69,7 +69,7 @@ def test_complete_history_gradio_format():
     assert gradio_format[1]["content"] == "Hi there"
 
     # thought
-    thought_message = history[-3]
+    thought_message = history[-2]
     assert thought_message["display"]["role"] == "assistant"
     assert (
         "I need to find information about ATSB investigations."
@@ -80,16 +80,17 @@ def test_complete_history_gradio_format():
         "I need to find information about ATSB investigations."
         in thought_message["ai"]["content"]
     )
-    # Check that tool usage is included in the last message
-    function_call = history[-2]
+    # Check the collapsed function call + result entry
+    function_call = history[-1]
     assert function_call["display"]["role"] == "assistant"
-    assert "Executing search_knowledge" in function_call["display"]["content"]
-
-    function_result = history[-1]
-    assert function_result["display"]["role"] == "assistant"
-    assert (
-        "Found 3 relevant ATSB investigations." in function_result["display"]["content"]
-    )
+    assert "search_knowledge" in function_call["display"]["content"]
+    assert "Found 3 relevant ATSB investigations." in function_call["display"]["content"]
+    # Verify ai format flattens correctly
+    ai_format = history.openai_format()
+    assert len(ai_format) == 6  # user, assistant, user, thought, function_call, function_call_output
+    assert ai_format[-1]["type"] == "function_call_output"
+    assert ai_format[-1]["output"] == "Found 3 relevant ATSB investigations."
+    assert ai_format[-2]["type"] == "function_call"
 
 
 @patch("backend.Assistant.Assistant.process_input")

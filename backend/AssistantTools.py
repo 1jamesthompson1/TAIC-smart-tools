@@ -1,9 +1,12 @@
 """Tools that the AI assistant can use to search, read reports, and reason."""
 
+import json
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
+
+import pandas as pd
 
 from .Searching import Searcher, SearchParams
 
@@ -108,6 +111,10 @@ search(query="", year_range=[2000, 2023], document_type=["safety_issue", "sectio
                 "type": "string",
                 "description": "Search query. Empty string returns all results matching other filters.",
             },
+            "limit": {
+                "type": "number",
+                "description": "Maximum results to return. Default 150 which is good for quick overviews, larger (500+) for exhaustive retrieval. Set to 300 to help with broad analyses.",
+            },
             "search_type": {
                 "type": "string",
                 "enum": ["fts", "vector"],
@@ -176,23 +183,46 @@ search(query="", year_range=[2000, 2023], document_type=["safety_issue", "sectio
         ],
     }
 
-    def __init__(self, searcher: Searcher):
+    def __init__(
+        self, searcher: Searcher, analyze_tool: "AnalyzeResultsTool | None" = None
+    ):
         """Constructor."""
         self.searcher = searcher
+        self.analyze_tool = analyze_tool
 
     def execute(self, **kwargs) -> str:
         """Execute a search against the knowledge base.
 
         Returns:
-            str: HTML formatted search results.
+            str: Markdown formatted search results.
         """
+        limit = kwargs.pop("limit", 150)
         results, info, _plots = self.searcher.knowledge_search(
             SearchParams(**kwargs),
+            limit=limit,
         )
 
-        results_html = results.to_html(index=False)
+        if self.analyze_tool is not None:
+            self.analyze_tool.update_results(results)
 
-        return f"<p>Information about the search:<br>{info}<br>Search Results:<br></p>{results_html}"
+        summary = f"**Search results:** {info.get('relevant_results', len(results))} relevant out of {len(results)} total"
+        if info.get("info_message"):
+            summary += f"\n_{info['info_message']}_"
+
+        results["agency_id"] = results.apply(
+            lambda row: (
+                row["agency_id"]
+                if pd.isna(row["url"])
+                else f"<a href='{row['url']}'>{row['agency_id']}</a>"
+            ),
+            axis=1,
+        )
+
+        results = results.drop(columns=["url", "year", "agency", "report_id"])
+
+        md = results.to_html(index=False, escape=False)
+
+        return f"{summary}\n\n{md}"
 
 
 class DocumentationTool(Tool):
@@ -254,6 +284,178 @@ class DocumentationTool(Tool):
         return "\n\n".join(found_documents)
 
 
+class AnalyzeResultsTool(Tool):
+    """Tool for running pandas queries on the last search results for quantitative analysis."""
+
+    _tool_name = "analyze_results"
+    _tool_description = """Run simple pandas queries on the last search results to get quantitative insights.
+Use column names from the search results: document, document_id, report_id, agency_id, year, mode, agency, document_type, location, occurrence_type, fatalities, injuries, relevance.
+
+Examples:
+# Count by document type
+df['document_type'].value_counts().to_dict()
+
+# Filter and count
+df[df['agency'] == 'TAIC']['report_id'].nunique()
+
+# Group by year
+df.groupby('year').size().to_dict()
+
+# Average fatalities
+df['fatalities'].mean()
+
+# Count unique reports
+df['report_id'].nunique()
+"""
+    _tool_parameters: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "expression": {
+                "type": "string",
+                "description": "A pandas expression using 'df' as the last search results DataFrame. Returns str/repr of the result.",
+            },
+        },
+        "required": ["expression"],
+    }
+
+    def __init__(self, searcher: Searcher):
+        self.searcher = searcher
+        self._last_results: pd.DataFrame | None = None
+
+    def update_results(self, results: pd.DataFrame | None):
+        """Store the latest search results for analysis."""
+        self._last_results = results
+
+    def execute(self, **kwargs) -> str:
+        """Execute a pandas expression against the last search results.
+
+        Returns:
+            str: The result of the expression as a string.
+        """
+        if self._last_results is None or self._last_results.empty:
+            return "No search results available. Run a search first."
+
+        expression = kwargs.get("expression", "")
+        if not expression:
+            return "No expression provided."
+
+        try:
+            df = self._last_results
+            result = eval(expression, {"df": df, "pd": pd})
+            return str(result)
+        except Exception as e:
+            return f"Error evaluating expression: {e}\n\nAvailable columns: {list(self._last_results.columns)}"
+
+
+class FindRelevantReports(Tool):
+    """Tool for bulk FTS search on the rpeort text and metadata filtering to find relevant report IDs and agency IDs for further analysis."""
+
+    _tool_name = "search_report_text"
+    _tool_description = """Search the report_text table (~4k rows) using FTS to find relevant report IDs and agency IDs.
+This is useful for filtering: first search here to find which reports mention a topic, then pass the report_ids/agency_ids to the main search tool.
+
+Use this with keyword-only searches (FTS) — it does not support vector/semantic search.
+Returns a concise list of report IDs and agency IDs with their matching text excerpts.
+"""
+    _tool_parameters: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "FTS keyword query to search in report full text.",
+            },
+            "year_range": {
+                "type": "array",
+                "description": f"Year range [start, end]. Valid range 2000-{datetime.now(tz=timezone.utc).year}.",
+                "items": {"type": "number"},
+            },
+            "modes": {
+                "type": "array",
+                "description": "Filter by mode: 0=aviation, 1=rail, 2=marine.",
+                "items": {"type": "string"},
+            },
+            "agencies": {
+                "type": "array",
+                "description": "Filter by agency: TAIC, ATSB, or TSB.",
+                "items": {"type": "string"},
+            },
+            "location": {
+                "type": "string",
+                "description": "Filter by location text.",
+            },
+            "occurrence_type": {
+                "type": "array",
+                "description": "Filter by occurrence type.",
+                "items": {"type": "string"},
+            },
+            "fatalities_range": {
+                "type": "array",
+                "description": "Filter by fatalities count range, e.g. [1, 10]. Use -1 for no upper bound.",
+                "items": {"type": "number"},
+            },
+            "injuries_range": {
+                "type": "array",
+                "description": "Filter by injuries count range, e.g. [0, 5]. Use -1 for no upper bound.",
+                "items": {"type": "number"},
+            },
+            "metadata_filter": {
+                "type": "string",
+                "description": "Filter metadata_json. 'key=value' for a specific field; plain text for full JSON search.",
+            },
+            "limit": {
+                "type": "number",
+                "description": "Maximum results to return. Default 50.",
+            },
+        },
+        "required": ["query"],
+    }
+
+    def __init__(self, searcher: Searcher):
+        self.searcher = searcher
+
+    def execute(self, **kwargs) -> str:
+        """Execute a FTS search on report_text table.
+
+        Returns:
+            str: Formatted list of matching report IDs, agency IDs, and text excerpts.
+        """
+        limit = kwargs.pop("limit", 50)
+        params = SearchParams(
+            query=kwargs.get("query", ""),
+            search_type="fts",
+            year_range=kwargs.get(
+                "year_range", (2000, datetime.now(tz=timezone.utc).year)
+            ),
+            document_type=["report_text"],
+            modes=kwargs.get("modes", ["0", "1", "2"]),
+            agencies=kwargs.get("agencies", ["TAIC", "ATSB", "TSB"]),
+            location=kwargs.get("location"),
+            occurrence_type=kwargs.get("occurrence_type", []),
+            fatalities_range=kwargs.get("fatalities_range"),
+            injuries_range=kwargs.get("injuries_range"),
+            metadata_filter=kwargs.get("metadata_filter"),
+        )
+
+        results, info = self.searcher.knowledge_search_report_text(params, limit=limit)
+
+        if results.empty:
+            return "No matching reports found in report_text table."
+
+        summary = results[
+            ["report_id", "agency_id", "agency", "year"]
+        ].drop_duplicates()
+        lines = [f"Found {len(results)} matches across {len(summary)} unique reports."]
+        lines.append("")
+        for _, row in summary.head(30).iterrows():
+            lines.append(
+                f"- report_id={row['report_id']}, agency_id={row['agency_id']}, agency={row['agency']}, year={row['year']}"
+            )
+        if len(summary) > 30:
+            lines.append(f"... and {len(summary) - 30} more reports")
+
+        return "\n".join(lines)
+
+
 class ReadReportTool(Tool):
     """Tool for reading the full text of a report by report ID."""
 
@@ -303,3 +505,155 @@ class ReadReportTool(Tool):
             return f"No report found with '{identifier}'."
 
         return result
+
+
+class SkillsTool(Tool):
+    """Tool for reading the full content of an investigator skill."""
+
+    _tool_name = "read_skill"
+    _tool_description = """Read the full content of a specific investigator skill for detailed guidance.
+Call with a skill name (e.g. 'finding-previous-occurrences') to get the complete instructions."""
+
+    _tool_parameters: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "skill_name": {
+                "type": "string",
+                "description": "Name of the skill to read (e.g. 'finding-previous-occurrences').",
+            },
+        },
+        "required": ["skill_name"],
+    }
+
+    _skills_dir: ClassVar[Path] = Path(__file__).parent.parent / "skills"
+
+    @classmethod
+    def get_available_skills_markdown(cls) -> str:
+        """Return a markdown bullet list of all available skills with descriptions.
+
+        Reads the YAML frontmatter from each .md file in the skills directory.
+        Returns an empty string if no skills directory or no skill files exist.
+        """
+        if not cls._skills_dir.exists():
+            return ""
+
+        skill_files = sorted(cls._skills_dir.glob("*.md"))
+        if not skill_files:
+            return ""
+
+        lines: list[str] = []
+        for skill_file in skill_files:
+            content = skill_file.read_text(encoding="utf-8")
+            name = skill_file.stem
+            description = "No description available."
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    for line in parts[1].strip().split("\n"):
+                        line = line.strip()
+                        if line.startswith("name:"):
+                            name = line.split(":", 1)[1].strip().strip('"')
+                        elif line.startswith("description:"):
+                            description = line.split(":", 1)[1].strip().strip('"')
+            lines.append(f"- **{name}** — {description}")
+        return "\n".join(lines)
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def _strip_frontmatter(content: str) -> str:
+        """Remove YAML frontmatter from markdown content."""
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                return parts[2].strip()
+        return content
+
+    @classmethod
+    def execute(cls, **kwargs) -> str:
+        """Execute the skills tool.
+
+        Returns:
+            str: Full skill content.
+        """
+        skill_name = kwargs.get("skill_name", "")
+        if not skill_name:
+            return "Please provide a skill_name parameter."
+
+        skill_path = cls._skills_dir / f"{skill_name}.md"
+        if not skill_path.exists():
+            # Try matching by frontmatter name
+            for skill_file in cls._skills_dir.glob("*.md"):
+                content = skill_file.read_text(encoding="utf-8")
+                if content.startswith("---"):
+                    parts = content.split("---", 2)
+                    if len(parts) >= 3 and f"name: {skill_name}" in parts[1]:
+                        body = cls._strip_frontmatter(content)
+                        return body if body else content
+
+            return f"Skill '{skill_name}' not found."
+
+        content = skill_path.read_text(encoding="utf-8")
+        body = cls._strip_frontmatter(content)
+        return body if body else content
+
+
+class DelegateTool(Tool):
+    """Tool for delegating data to another LLM call for out-of-context-window analysis.
+
+    Use this when you have large amounts of text (many search results, long reports) that would
+    overflow your context window. This tool sends the content to a fresh AI instance that only
+    sees the provided data plus your instructions, and returns a concise summary/analysis.
+    """
+
+    _tool_name = "delegate_analysis"
+    _tool_description = """Send data (search results, reports, etc.) to a separate AI for out-of-context analysis.
+Useful when you have too much data to fit in your context window. The data plus your instructions
+are sent to a fresh AI that only sees that content, and returns a focused analysis.
+
+Examples:
+- delegate_analysis(data="[long search results...]", instruction="Summarise the common safety themes across these results")
+- delegate_analysis(data="[full report text...]", instruction="List all safety issues mentioned in this report")
+"""
+    _tool_parameters: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "data": {
+                "type": "string",
+                "description": "The data/content to analyse (e.g. search results HTML, report text).",
+            },
+            "instruction": {
+                "type": "string",
+                "description": "Instructions for the analysis. Be specific about what you want extracted.",
+            },
+        },
+        "required": ["data", "instruction"],
+    }
+
+    def __init__(self, client):
+        self.client = client
+
+    def execute(self, **kwargs) -> str:
+        """Send data to a fresh LLM call for analysis.
+
+        Returns:
+            str: The analysis result from the delegated AI call.
+        """
+        data = kwargs.get("data", "")
+        instruction = kwargs.get("instruction", "")
+
+        if not data or not instruction:
+            return "Both data and instruction are required."
+
+        system_prompt = """You are an expert accident investigator and analyst. You will be given data and asked to analyse it.
+        Provide a concise, well-structured analysis. Focus on extracting key findings, patterns, and insights."""
+
+        response = self.client.responses.create(
+            model="gpt-5.6-luna",
+            instructions=system_prompt,
+            input=f"## Data\n\n{data}\n\n## Instructions\n\n{instruction}",
+            store=False,
+        )
+
+        return response.output_text

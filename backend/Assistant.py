@@ -13,7 +13,25 @@ from datetime import datetime, timezone
 import openai
 from rich import print  # noqa: A004
 
-from .AssistantTools import DocumentationTool, ReadReportTool, SearchTool
+from .AssistantTools import (
+    AnalyzeResultsTool,
+    DelegateTool,
+    DocumentationTool,
+    ReadReportTool,
+    FindRelevantReports,
+    SearchTool,
+    SkillsTool,
+)
+
+# Build the static skills list header once at import time
+_AVAILABLE_SKILLS = SkillsTool.get_available_skills_markdown()
+_SKILLS_HEADER = (
+    "### Available Skills\n"
+    + _AVAILABLE_SKILLS
+    + "\n\nUse `read_skill` with a skill name to load the full guidance."
+    if _AVAILABLE_SKILLS
+    else ""
+)
 
 
 # Reason for noqa:
@@ -84,7 +102,7 @@ class CompleteHistory(list):  # noqa: FURB189
         Check that the history is in the correct format.
         Each message must be a dict with "display" and "ai" keys.
         The "display" key must have "role" and "content".
-        The "ai" key must have either "role" and "content" or "type", "output", "call_id".
+        The "ai" key must be either a dict (single entry) or a list of dicts (collapsed function calls).
 
         Raises:
             TypeError: If a message is of the wrong type
@@ -104,30 +122,36 @@ class CompleteHistory(list):  # noqa: FURB189
             # Check display format
             if not isinstance(display, dict):
                 msg = f"Message {i} 'display' must be a dict, got {type(display)}"
-                raise TypeError(
-                    msg,
-                )
+                raise TypeError(msg)
             if "role" not in display or "content" not in display:
                 msg = f"Message {i} 'display' must have 'role' and 'content', got {display.keys()}"
-                raise ValueError(
-                    msg,
-                )
+                raise ValueError(msg)
 
-            # Check ai format
-            if not isinstance(ai, dict):
-                msg = f"Message {i} 'ai' must be a dict, got {type(ai)}"
+            # Check ai format — can be dict (single) or list (collapsed)
+            if isinstance(ai, list):
+                for j, item in enumerate(ai):
+                    if not isinstance(item, dict):
+                        msg = f"Message {i} ai[{j}] must be a dict"
+                        raise TypeError(msg)
+                    if not (
+                        ("role" in item and "content" in item)
+                        or ("type" in item and "name" in item and "arguments" in item)
+                        or ("type" in item and "output" in item and "call_id" in item)
+                    ):
+                        msg = f"Message {i} ai[{j}] has unknown format: {item.keys()}"
+                        raise ValueError(msg)
+            elif isinstance(ai, dict):
+                if ("role" in ai and "content" in ai) or (
+                    "type" in ai and "output" in ai and "call_id" in ai
+                ):  # chat message
+                    continue
+                if "type" in ai and "name" in ai and "arguments" in ai:  # Function call
+                    continue
+                msg = f"Message {i} 'ai' must be either function call, message or function output, got {ai.keys()}"
+                raise ValueError(msg)
+            else:
+                msg = f"Message {i} 'ai' must be a dict or list, got {type(ai)}"
                 raise TypeError(msg)
-            if ("role" in ai and "content" in ai) or (
-                "type" in ai and "output" in ai and "call_id" in ai
-            ):  # chat messsage
-                continue
-            if "type" in ai and "name" in ai and "arguments" in ai:  # Function call
-                continue
-
-            msg = f"Message {i} 'ai' must be either function call, message or function output, got {ai.keys()}"
-            raise ValueError(
-                msg,
-            )
 
     def add_message(self, role: str, content: str, metadata: str | None = None):
         """Add message to history.
@@ -208,56 +232,68 @@ class CompleteHistory(list):  # noqa: FURB189
     def add_function_call(self, ai_call: dict):
         """Add a function call requested by the assistant.
 
+        Creates a single collapsed entry. The display is updated in-place
+        when complete_function_call is called.
+
         Args:
             ai_call: function call details
         """
+        args = ai_call.get("arguments", {})
+        if isinstance(args, str):
+            args = args
+        else:
+            args = str(args)
         self.append(
             {
                 "display": {
                     "role": "assistant",
-                    "content": f"Executing {ai_call['name']} with parameters: {ai_call['arguments']}",
+                    "content": f"🔧 {ai_call['name']}({args})",
                     "metadata": {
-                        "title": f"🔧 Executing {ai_call['name']}",
+                        "title": f"🔧 {ai_call['name']}",
                         "status": "pending",
                     },
                 },
-                "ai": ai_call,
+                "ai": [ai_call],
             },
         )
 
     def complete_function_call(self, output: str | None, call_id: str):
-        """Complete a function call by setting the previous message to done and adding the output message if provided.
+        """Complete a function call by updating the existing display and appending the AI output.
+
+        The display is collapsed into a single entry showing the result.
+        The AI history stores a list so both the function_call and function_call_output
+        are preserved for the model.
 
         Args:
             output: output of the function called
             call_id: id of the function called where the id is linked to the function call in the history
 
         Raises:
-            ValueError: If current history is empty or last message's ai attribute is not a function call
+            ValueError: If current history is empty or last message's ai attribute is not a function_call
         """
-        if len(self) == 0 or self[-1]["ai"].get("type") != "function_call":
+        if len(self) == 0:
             msg = "No function call to complete"
             raise ValueError(msg)
 
-        self[-1]["display"]["metadata"]["status"] = "done"
+        last = self[-1]
+        ai_list = last["ai"]
+        if not isinstance(ai_list, list) or not ai_list or ai_list[0].get("type") != "function_call":
+            msg = "Last message is not a function call"
+            raise ValueError(msg)
 
-        self.append(
-            {
-                "display": {
-                    "role": "assistant",
-                    "content": output,
-                    "metadata": {
-                        "title": f"📖 Result from {self[-1]['ai']['name']}",
-                        "status": "done",
-                    },
-                },
-                "ai": {
-                    "type": "function_call_output",
-                    "output": output,
-                    "call_id": call_id,
-                },
-            },
-        )
+        fn_name = last["ai"][0].get("name", "tool")
+        fn_args = last["ai"][0].get("arguments", "")
+        display_output = output or "(no output)"
+
+        last["display"]["content"] = f"🔧 {fn_name}({fn_args}) \n|\nv\n {display_output}"
+        last["display"]["metadata"]["status"] = "done"
+        last["display"]["metadata"]["title"] = f"🔧 {fn_name} ✓"
+
+        last["ai"].append({
+            "type": "function_call_output",
+            "output": output,
+            "call_id": call_id,
+        })
 
     def undo(self, index: int) -> str:
         """Undo to a specific index in the history.
@@ -315,14 +351,20 @@ class CompleteHistory(list):  # noqa: FURB189
     def openai_format(self) -> list[dict]:
         """Convert to OpenAI message format.
 
-        This means the only two formats are:
-        messages with a "role" and "content"
-        or function calls with "type", "output", "call_id"
+        This flattens any entries that contain multiple AI items (e.g. function_call + function_call_output
+        in a single collapsed display entry) into separate entries for the model.
 
         Returns:
             History converted to the OpenAI format
         """
-        return [msg["ai"] for msg in self]
+        result = []
+        for msg in self:
+            ai = msg["ai"]
+            if isinstance(ai, list):
+                result.extend(ai)
+            else:
+                result.append(ai)
+        return result
 
     def gradio_format(self) -> list[dict]:
         """Convert to Gradio message format.
@@ -355,6 +397,8 @@ Just respond with the title and nothing else.
         """Returns general context of the user's query."""
         return f"""
 Below is general information to help you contextualise the user's query.
+
+{_SKILLS_HEADER}
 
 **Dataset Information:**
 The core of your tools are built around a vector database that contains accident reports from:
@@ -445,6 +489,7 @@ If you have enough information to respond to the user, you should provide a shor
 
 {general_info}
 
+Remember you will be given a chance to respond to the user after you have made your plan. You are just providing a plan and your thoughts right now.
 """
 
     @staticmethod
@@ -459,7 +504,7 @@ You will be provided the conversation history including the plan you have made.
 You are to act on your plan, this may involve calling functions to get more information or providing a response for the user.
 
 If you choose to respond to the user, ensure you provide a concise and accurate answer based on the information available.
-If you reference any reports, ensure you provide the report IDs. If you reference any other document you should provide the document type and document ID.
+If you reference any reports, ensure you provide the report IDs (preferable to use Agency IDs as they are more user recognizable) as clickable links. If you reference any other document you should provide the document type and document ID.
 
 {general_info}
 """
@@ -486,10 +531,15 @@ class Assistant:
             self.openai_client = openai.OpenAI(api_key=openai_api_key)
 
         # Initialize tools
+        self.analyze_tool = AnalyzeResultsTool(searcher)
         self.tools = [
-            SearchTool(searcher),
+            SkillsTool(),
+            SearchTool(searcher, analyze_tool=self.analyze_tool),
             ReadReportTool(searcher),
             DocumentationTool(),
+            self.analyze_tool,
+            FindRelevantReports(searcher),
+            DelegateTool(self.openai_client),
         ]
         self.tool_map = {tool.name: tool for tool in self.tools}
 
