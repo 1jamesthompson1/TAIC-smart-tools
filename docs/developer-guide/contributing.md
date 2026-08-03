@@ -92,12 +92,25 @@ graph LR
 
 ## Testing a Deployment Before Merging (TAIC specific)
 
+You can deploy any branch to any slot before merging. The available slots are
+`dev`, `beta`, and `staging` — the `slot-name` variable selects which one:
+
 ```bash
-# Run the sync pipeline
+# Run the sync pipeline (re-syncs shared environments)
 az pipelines run --name "sync"
 
-# Deploy the app to a specific slot
-az pipelines run --name "deploy" --variables "run-branch=$(git branch --show-current) slot-name=dev"  --open
-```  
+# Deploy the current branch to the dev slot
+az pipelines run --name "deploy" --variables "run-branch=$(git branch --show-current) slot-name=dev" --open
+
+# Deploy the current branch to the beta slot
+az pipelines run --name "deploy" --variables "run-branch=$(git branch --show-current) slot-name=beta" --open
+```
+
+**What version is shown on the login page and home page:**
+
+- **Production:** the version number from `pyproject.toml` (e.g. `0.8.1`). This is bumped automatically when a PR is merged to `main` (see version management above), so you never need to bump it manually to test.
+- **dev / beta / staging:** the branch name and commit hash only (e.g. `clean-up-vector-db-download-path-9f3ab12c`), so each test deployment is uniquely identifiable without consuming a version number.
+
+The branch/commit label comes from the `GIT_BRANCH` and `GIT_COMMIT` app settings, which the deploy pipeline sets as **slot-specific settings** — they stay with the slot and never move to production during a slot swap.
 
 

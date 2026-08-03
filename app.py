@@ -922,7 +922,7 @@ def get_welcome_message(request: gr.Request):
     """
     return (
         request.username,
-        f"**Data:** {searching_instance.last_updated} • **App:** {Version.CURRENT_VERSION} • **DB:** {searching_instance.db_version}",
+        f"**Data:** {searching_instance.last_updated} • **App:** {Version.get_display_version()} • **DB:** {searching_instance.db_version}",
     )
 
 
@@ -1495,7 +1495,7 @@ with gr.Blocks(
 ) as login_page:
     with gr.Column(elem_classes="complete-center"):
         gr.Markdown("# TAIC smart tools")
-        gr.Markdown(f"**App version:** {Version.CURRENT_VERSION}")
+        gr.Markdown(f"**App version:** {Version.get_display_version()}")
         gr.Markdown("Please login to continue:")
         gr.Button("Login", link="/login")
         gr.Button("📚 Documentation", link="/documentation", variant="primary")

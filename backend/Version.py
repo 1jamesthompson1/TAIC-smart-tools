@@ -3,6 +3,7 @@
 Reads version from pyproject.toml and provides compatibility checking.
 """
 
+import os
 import re
 from pathlib import Path
 
@@ -87,3 +88,41 @@ def is_compatible(
 
 # Module-level constants
 CURRENT_VERSION = get_current_version()
+
+
+def get_deployment_slot() -> str:
+    """Get the current Azure App Service deployment slot name.
+
+    App Service automatically sets WEBSITE_SLOT_NAME for every slot
+    ("production" for the main site, otherwise the slot name). The
+    DEPLOYMENT_SLOT env var is honoured as an override (e.g. for local dev).
+
+    Returns:
+        The slot name in lowercase, or "production" if unknown.
+    """
+    slot = (
+        os.getenv("DEPLOYMENT_SLOT") or os.getenv("WEBSITE_SLOT_NAME") or "production"
+    )
+    return slot.strip().lower()
+
+
+def get_display_version() -> str:
+    """Get the user-facing version string.
+
+    Production shows the plain semver from pyproject.toml. Non-production
+    slots (dev/staging/beta) show just the branch name and commit hash so
+    every test deployment is uniquely identifiable.
+
+    The suffix is driven purely by environment variables set on the slot, so
+    this defaults to a clean production version and can never show a dev
+    label in production unless the slot settings explicitly say otherwise.
+
+    Returns:
+        The version string to display to users.
+    """
+    slot = get_deployment_slot()
+    if slot in {"production", ""}:
+        return get_current_version()
+    branch = os.getenv("GIT_BRANCH") or "unknown"
+    commit = os.getenv("GIT_COMMIT") or os.getenv("COMMIT_HASH") or "unknown"
+    return f"{branch}-{commit[:8]}"
