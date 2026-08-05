@@ -1,6 +1,6 @@
 ---
 name: finding-previous-occurrences
-description: When the user asks to find previous occurrences which may be in relation to accident occurrences, safety issues or recommendations.
+description: When the user asks to find previous occurrences which may be in relation to accident occurrences, safety issues or recommendations. This is commonly used when doing a safety investigation.
 ---
 
 If not given a safety issue or recommendation you should ask for what the user wants to find previous occurrences of. If given a safety issue or recommendation you should search for previous occurrences of that issue or recommendation. 

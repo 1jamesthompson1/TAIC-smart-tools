@@ -100,10 +100,10 @@ You can deploy any branch to any slot before merging. The available slots are
 az pipelines run --name "sync"
 
 # Deploy the current branch to the dev slot
-az pipelines run --name "deploy" --variables "run-branch=$(git branch --show-current) slot-name=dev" --open
+az pipelines run --name "deploy" --variables run-branch="$(git branch --show-current)" slot-name=dev --open
 
 # Deploy the current branch to the beta slot
-az pipelines run --name "deploy" --variables "run-branch=$(git branch --show-current) slot-name=beta" --open
+az pipelines run --name "deploy" --variables run-branch="$(git branch --show-current)" slot-name=beta --open
 ```
 
 **What version is shown on the login page and home page:**

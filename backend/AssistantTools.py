@@ -83,6 +83,8 @@ Document types:
 - section — AI extraction. All agencies. Report text chunked by page/section from parsed PDF.
 - summary — website scraping. TAIC and ATSB only. Brief overviews from agency report webpages.
 
+For more quantitative analysis you might find that the analyze_results tool or the search_report_text tool are more useful. Particularly for metadata filtering (i.e counts of occurrences by aircraft types etc) using the search_report_text tool would be better.
+
 Examples:
 # Filter-only: find all helicopter safety issues since 2020
 search(query="", year_range=[2020, 2026], document_type=["safety_issue"], modes=["0"], agencies=["TAIC", "ATSB", "TSB"], metadata_filter="aircraft_type=Helicopter")
@@ -356,6 +358,9 @@ class FindRelevantReports(Tool):
 This is useful for filtering: first search here to find which reports mention a topic, then pass the report_ids/agency_ids to the main search tool.
 
 Use this with keyword-only searches (FTS) — it does not support vector/semantic search.
+
+This is also very useful for filtering by metadata fields (e.g. aircraft type, engine type, occurrence type) to find relevant reports. As you can guarantee that each report is only listed once (unlike the main search tool which returns multiple rows per report), you can use this to get a concise list of reports for further analysis.
+
 Returns a concise list of report IDs and agency IDs with their matching text excerpts.
 """
     _tool_parameters: ClassVar[dict[str, Any]] = {
@@ -405,7 +410,7 @@ Returns a concise list of report IDs and agency IDs with their matching text exc
             },
             "limit": {
                 "type": "number",
-                "description": "Maximum results to return. Default 50.",
+                "description": "Maximum results to return. Default 250.",
             },
         },
         "required": ["query"],
@@ -420,7 +425,7 @@ Returns a concise list of report IDs and agency IDs with their matching text exc
         Returns:
             str: Formatted list of matching report IDs, agency IDs, and text excerpts.
         """
-        limit = kwargs.pop("limit", 50)
+        limit = kwargs.pop("limit", 250)
         params = SearchParams(
             query=kwargs.get("query", ""),
             search_type="fts",
@@ -447,13 +452,10 @@ Returns a concise list of report IDs and agency IDs with their matching text exc
         ].drop_duplicates()
         lines = [f"Found {len(results)} matches across {len(summary)} unique reports."]
         lines.append("")
-        for _, row in summary.head(30).iterrows():
+        for _, row in summary.iterrows():
             lines.append(
-                f"- report_id={row['report_id']}, agency_id={row['agency_id']}, agency={row['agency']}, year={row['year']}"
+                f"- report_id={row['report_id']}, agency_id={row['agency_id']}, agency={row['agency']}, year={row['year']}",
             )
-        if len(summary) > 30:
-            lines.append(f"... and {len(summary) - 30} more reports")
-
         return "\n".join(lines)
 
 
