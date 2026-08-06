@@ -68,6 +68,12 @@ def is_compatible(
             "No version information found. This data was created before version tracking was implemented. Please migrate or recreate this data.",
         )
 
+    if not is_valid_semver(stored_version):
+        return (
+            True,
+            f"Weird version detected: stored={stored_version}, current={current_version}. This conversation was created by a dev or beta deployment and may differ from this environment.",
+        )
+
     stored_major, stored_minor, stored_patch = parse_version(stored_version)
     current_major, current_minor, current_patch = parse_version(current_version)
 
@@ -106,12 +112,21 @@ def get_deployment_slot() -> str:
     return slot.strip().lower()
 
 
+def is_valid_semver(version: str) -> bool:
+    """Check whether a version string is a plain semantic version.
+
+    Returns:
+        bool: True if the version matches the major.minor.patch format.
+    """
+    return bool(re.match(r"^\d+\.\d+\.\d+$", version))
+
+
 def get_display_version() -> str:
     """Get the user-facing version string.
 
-    Production shows the plain semver from pyproject.toml. Non-production
-    slots (dev/staging/beta) show just the branch name and commit hash so
-    every test deployment is uniquely identifiable.
+    Staging and production show the plain semver from pyproject.toml.
+    Dev and beta slots show just the branch name and commit hash so each
+    test deployment is uniquely identifiable.
 
     The suffix is driven purely by environment variables set on the slot, so
     this defaults to a clean production version and can never show a dev
@@ -121,7 +136,7 @@ def get_display_version() -> str:
         The version string to display to users.
     """
     slot = get_deployment_slot()
-    if slot in {"production", ""}:
+    if slot not in {"dev", "beta"}:
         return get_current_version()
     branch = os.getenv("GIT_BRANCH") or "unknown"
     commit = os.getenv("GIT_COMMIT") or os.getenv("COMMIT_HASH") or "unknown"

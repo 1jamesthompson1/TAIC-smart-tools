@@ -108,9 +108,11 @@ az pipelines run --name "deploy" --variables run-branch="$(git branch --show-cur
 
 **What version is shown on the login page and home page:**
 
-- **Production:** the version number from `pyproject.toml` (e.g. `0.8.1`). This is bumped automatically when a PR is merged to `main` (see version management above), so you never need to bump it manually to test.
-- **dev / beta / staging:** the branch name and commit hash only (e.g. `clean-up-vector-db-download-path-9f3ab12c`), so each test deployment is uniquely identifiable without consuming a version number.
+- **Staging and production:** the version number from `pyproject.toml` (e.g. `0.8.1`). This is bumped automatically when a PR is merged to `main` (see version management above), so you never need to bump it manually to test.
+- **dev / beta:** the branch name and commit hash only (e.g. `clean-up-vector-db-download-path-9f3ab12c`), so each test deployment is uniquely identifiable without consuming a version number.
 
 The branch/commit label comes from the `GIT_BRANCH` and `GIT_COMMIT` app settings, which the deploy pipeline sets as **slot-specific settings** — they stay with the slot and never move to production during a slot swap.
+
+Conversations and search history created on dev/beta slots store the display version (branch/commit label), so they are uniquely attributable to a test deployment. Staging and production store the plain semver. When a conversation stored on dev/beta is loaded elsewhere, the non-semver stored version always produces a warning (never a hard error).
 
 

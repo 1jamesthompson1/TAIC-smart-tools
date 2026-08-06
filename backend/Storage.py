@@ -357,7 +357,7 @@ class ConversationMetadataStore:
             "created_at": existing_entity.get("created_at", now)
             if existing_entity
             else now,
-            "app_version": Version.CURRENT_VERSION,
+            "app_version": Version.get_display_version(),
             "db_version": db_version,
             "deleted": False,
         }
@@ -577,7 +577,7 @@ class KnowledgeSearchMetadataStore:
             "blob_name": blob_name,
             "search_timestamp": now,
             "created_at": now,
-            "app_version": Version.CURRENT_VERSION,
+            "app_version": Version.get_display_version(),
         }
 
         # Store metadata
