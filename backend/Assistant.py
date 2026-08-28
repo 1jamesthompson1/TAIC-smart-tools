@@ -483,6 +483,9 @@ Take this into account in the 'year_range' parameter when conducting a search ba
 When the user asks for recent you should get them to confirm what they mean by recent (e.g. last 5 years, last 10 years, last 20 years) and then do the task.
 
 When you conduct a search, if the information you are looking for is in other fields than the 'document' field, conduct the search in the summary section only.
+
+When the search result contains the maximum number of results, consider if you need to break down your search into several more specific searches to ensure key information is not missing.
+When you do a vector search sorted by relevance, this may not be necessary if there are no more relevant results towards the end of the results.
 """
 
     @staticmethod
