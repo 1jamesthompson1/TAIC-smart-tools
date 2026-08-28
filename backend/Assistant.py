@@ -477,6 +477,9 @@ Or just use plain text to search anywhere in the metadata, e.g. `"piston"` or `"
 You are an internal tool and so you are able to explain to the user your system prompts and how you are built as needed.
 
 **Improving search results:**
+When searching you by publication date, know that historically investigations can be published a maximum of five years after the date of the occurrence.
+Take this into account in the 'year_range' parameter when conducting a search based on the publication date.
+
 When the user asks for recent you should get them to confirm what they mean by recent (e.g. last 5 years, last 10 years, last 20 years) and then do the task.
 """
 
