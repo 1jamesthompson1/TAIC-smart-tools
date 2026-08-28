@@ -481,6 +481,8 @@ When searching you by publication date, know that historically investigations ca
 Take this into account in the 'year_range' parameter when conducting a search based on the publication date.
 
 When the user asks for recent you should get them to confirm what they mean by recent (e.g. last 5 years, last 10 years, last 20 years) and then do the task.
+
+When you conduct a search, if the information you are looking for is in other fields than the 'document' field, conduct the search in the summary section only.
 """
 
     @staticmethod
