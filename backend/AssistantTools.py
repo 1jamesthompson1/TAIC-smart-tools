@@ -1,6 +1,8 @@
 """Tools that the AI assistant can use to search, read reports, and reason."""
 
 import json
+import logging
+import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -10,6 +12,8 @@ from typing import Any, ClassVar
 import pandas as pd
 
 from .Searching import Searcher, SearchParams
+
+logger = logging.getLogger(__name__)
 
 
 class Tool(ABC):
@@ -197,7 +201,7 @@ search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recomm
     }
 
     def __init__(
-        self, searcher: Searcher, analyze_tool: "AnalyzeResultsTool | None" = None
+        self, searcher: Searcher, analyze_tool: "AnalyzeResultsTool | None" = None,
     ):
         """Constructor."""
         self.searcher = searcher
@@ -207,21 +211,34 @@ search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recomm
         """Execute a search against the knowledge base.
 
         Returns:
-            str: Markdown formatted search results.
+            str: Markdown formatted search results with error details if search fails.
         """
         limit = kwargs.pop("limit", 150)
-
         exclude_document = kwargs.pop("exclude_document", False)
+        # Username for log correlation (if propagated from app/Assistant)
+        username = kwargs.pop("username", None) or kwargs.pop("user", None)
 
         # Ensure search_type has a default for filter-only searches
         if "search_type" not in kwargs or kwargs["search_type"] is None:
             kwargs.setdefault("search_type", None)
 
         search_params = SearchParams(**kwargs)
-        results, info, _plots = self.searcher.knowledge_search(
-            search_params,
-            limit=limit,
-        )
+        tool_start = time.perf_counter()
+        try:
+            results, info, _plots = self.searcher.knowledge_search(
+                search_params,
+                limit=limit,
+                username=username,
+            )
+        except Exception as e:
+            elapsed = time.perf_counter() - tool_start
+            logger.exception("SearchTool failed user=%s query=%r", username or "<none>", search_params.query)
+            if isinstance(e, TimeoutError):
+                return (
+                    f"Search timed out after {elapsed:.1f}s (query={search_params.query!r}). "
+                    f"Vector embedding via Azure AI likely hung. Error: {e}"
+                )
+            return f"Search failed after {elapsed:.1f}s: {e}"
 
         if self.analyze_tool is not None:
             self.analyze_tool.update_results(results)
@@ -232,28 +249,19 @@ search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recomm
         if exclude_document:
             summary += "\n_document column excluded (exclude_document=true) — reduced context overhead_"
 
-        # Make agency_id clickable if URL present, only if columns exist
         if "agency_id" in results.columns and "url" in results.columns:
             results["agency_id"] = results.apply(
-                lambda row: (
-                    row["agency_id"]
-                    if pd.isna(row["url"])
-                    else f"<a href='{row['url']}'>{row['agency_id']}</a>"
-                ),
+                lambda row: f"<a href='{row['url']}'>{row['agency_id']}</a>" if not pd.isna(row["url"]) else row["agency_id"],
                 axis=1,
             )
 
-        # Always drop internal / redundant columns if present
         results = results.drop(
-            columns=[c for c in ["url", "year", "agency", "report_id"] if c in results.columns]
+            columns=[c for c in ["url", "year", "agency", "report_id"] if c in results.columns],
         )
-
-        # Optionally drop the large document column to save context
         if exclude_document and "document" in results.columns:
             results = results.drop(columns=["document"])
 
         md = results.to_html(index=False, escape=False)
-
         return f"{summary}\n\n{md}"
 
 
@@ -350,7 +358,7 @@ df['report_id'].nunique()
         "required": ["expression"],
     }
 
-    def __init__(self, searcher: Searcher):
+    def __init__(self, searcher: Searcher):  # noqa: D107
         self.searcher = searcher
         self._last_results: pd.DataFrame | None = None
 
@@ -364,18 +372,24 @@ df['report_id'].nunique()
         Returns:
             str: The result of the expression as a string.
         """
+        username = kwargs.pop("username", None) or kwargs.pop("user", None)
         if self._last_results is None or self._last_results.empty:
+            logger.warning("analyze_results: no results for user=%s", username or "<none>")
             return "No search results available. Run a search first."
 
         expression = kwargs.get("expression", "")
         if not expression:
+            logger.warning("analyze_results: no expression for user=%s", username or "<none>")
             return "No expression provided."
 
+        logger.info("analyze_results: user=%s expression=%r", username or "<none>", expression)
         try:
             df = self._last_results
-            result = eval(expression, {"df": df, "pd": pd})
+            result = eval(expression, {"df": df, "pd": pd})  # noqa: S307
+            logger.info("analyze_results completed: user=%s result=%r", username or "<none>", str(result)[:200])
             return str(result)
         except Exception as e:
+            logger.exception("analyze_results failed: user=%s expression=%r error=%s", username or "<none>", expression, e)  # noqa: TRY401
             return f"Error evaluating expression: {e}\n\nAvailable columns: {list(self._last_results.columns)}"
 
 
@@ -445,7 +459,7 @@ Returns a concise list of report IDs and agency IDs with their matching text exc
         "required": ["query"],
     }
 
-    def __init__(self, searcher: Searcher):
+    def __init__(self, searcher: Searcher):  # noqa: D107
         self.searcher = searcher
 
     def execute(self, **kwargs) -> str:
@@ -455,11 +469,16 @@ Returns a concise list of report IDs and agency IDs with their matching text exc
             str: Formatted list of matching report IDs, agency IDs, and text excerpts.
         """
         limit = kwargs.pop("limit", 250)
+        username = kwargs.pop("username", None) or kwargs.pop("user", None)
+        # Remove username from kwargs so it doesn't pollute SearchParams via get
+        kwargs.pop("username", None)
+        kwargs.pop("user", None)
+        logger.info("search_report_text started: user=%s query=%r", username or "<none>", kwargs.get("query", ""))
         params = SearchParams(
             query=kwargs.get("query", ""),
             search_type="fts",
             year_range=kwargs.get(
-                "year_range", (2000, datetime.now(tz=timezone.utc).year)
+                "year_range", (2000, datetime.now(tz=timezone.utc).year),
             ),
             document_type=["report_text"],
             modes=kwargs.get("modes", ["0", "1", "2"]),
@@ -471,14 +490,22 @@ Returns a concise list of report IDs and agency IDs with their matching text exc
             metadata_filter=kwargs.get("metadata_filter"),
         )
 
-        results, info = self.searcher.knowledge_search_report_text(params, limit=limit)
+        results, _info = self.searcher.knowledge_search_report_text(params, limit=limit, username=username)
 
         if results.empty:
+            logger.info("search_report_text completed: user=%s query=%r rows=0", username or "<none>", kwargs.get("query", ""))
             return "No matching reports found in report_text table."
 
         summary = results[
             ["report_id", "agency_id", "agency", "year"]
         ].drop_duplicates()
+        logger.info(
+            "search_report_text completed: user=%s query=%r rows=%d reports=%d",
+            username or "<none>",
+            kwargs.get("query", ""),
+            len(results),
+            len(summary),
+        )
         lines = [f"Found {len(results)} matches across {len(summary)} unique reports."]
         lines.append("")
         for _, row in summary.iterrows():
@@ -521,15 +548,20 @@ class ReadReportTool(Tool):
         Returns:
             str: The full text of the report, or a not-found message.
         """
+        username = kwargs.pop("username", None) or kwargs.pop("user", None)
         report_id = kwargs.get("report_id", "")
         agency_id = kwargs.get("agency_id", "")
 
+        logger.info("read_report started: user=%s report_id=%r agency_id=%r", username or "<none>", report_id, agency_id)
+
         if not report_id and not agency_id:
+            logger.warning("read_report missing identifier user=%s", username or "<none>")
             return "Either report_id or agency_id must be provided."
 
         result = self.searcher.read_report(
             report_id=report_id or None,
             agency_id=agency_id or None,
+            username=username,
         )
 
         if result is None:
@@ -580,9 +612,9 @@ Call with a skill name (e.g. 'finding-previous-occurrences') to get the complete
             description = "No description available."
             if content.startswith("---"):
                 parts = content.split("---", 2)
-                if len(parts) >= 3:
+                if len(parts) >= 3:  # noqa: PLR2004
                     for line in parts[1].strip().split("\n"):
-                        line = line.strip()
+                        line = line.strip()  # noqa: PLW2901
                         if line.startswith("name:"):
                             name = line.split(":", 1)[1].strip().strip('"')
                         elif line.startswith("description:"):
@@ -590,15 +622,15 @@ Call with a skill name (e.g. 'finding-previous-occurrences') to get the complete
             lines.append(f"- **{name}** — {description}")
         return "\n".join(lines)
 
-    def __init__(self):
+    def __init__(self):  # noqa: D107
         pass
 
     @staticmethod
     def _strip_frontmatter(content: str) -> str:
-        """Remove YAML frontmatter from markdown content."""
+        """Remove YAML frontmatter from markdown content."""  # noqa: DOC201
         if content.startswith("---"):
             parts = content.split("---", 2)
-            if len(parts) >= 3:
+            if len(parts) >= 3:  # noqa: PLR2004
                 return parts[2].strip()
         return content
 
@@ -620,15 +652,15 @@ Call with a skill name (e.g. 'finding-previous-occurrences') to get the complete
                 content = skill_file.read_text(encoding="utf-8")
                 if content.startswith("---"):
                     parts = content.split("---", 2)
-                    if len(parts) >= 3 and f"name: {skill_name}" in parts[1]:
+                    if len(parts) >= 3 and f"name: {skill_name}" in parts[1]:  # noqa: PLR2004
                         body = cls._strip_frontmatter(content)
-                        return body if body else content
+                        return body or content
 
             return f"Skill '{skill_name}' not found."
 
         content = skill_path.read_text(encoding="utf-8")
         body = cls._strip_frontmatter(content)
-        return body if body else content
+        return body or content
 
 
 class DelegateTool(Tool):
@@ -683,7 +715,7 @@ Examples:
         "required": ["tool_calls", "instruction"],
     }
 
-    def __init__(self, client, tool_map):
+    def __init__(self, client, tool_map):  # noqa: D107
         self.client = client
         self.tool_map = tool_map
 
@@ -710,7 +742,7 @@ Examples:
             else:
                 try:
                     output = tool.execute(**tool_args)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     output = f"Error executing {tool_name}: {e}"
             return i, tool_name, tool_args, output
 

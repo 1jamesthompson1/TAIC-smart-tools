@@ -21,7 +21,6 @@ from authlib.integrations.starlette_client import OAuth, OAuthError
 from azure.data.tables import TableServiceClient
 from fastapi import Depends, FastAPI, HTTPException, Request
 from gradio_rangeslider import RangeSlider
-from rich import print  # noqa: A004
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse
@@ -30,23 +29,37 @@ from starlette.status import HTTP_302_FOUND
 
 from backend import Assistant, Searching, Storage, Version
 
-logging.basicConfig(level=logging.WARNING)
-
-logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-
-# Removing excessive logging from azure sdk
-logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(
-    logging.WARNING,
+# Structured logging: INFO for our code, WARNING for noisy deps.
+# Use a clear format with timestamp/level/name for prod debugging.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
+# Keep access logs quiet but not silent; our search logs are at INFO.
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+
+# Suppress very noisy Azure SDK polling but keep errors visible
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
 logging.getLogger("azure.core").setLevel(logging.WARNING)
 logging.getLogger("azure.storage").setLevel(logging.WARNING)
 logging.getLogger("azure.data.tables").setLevel(logging.WARNING)
+# Silence httpx request logs (very noisy: every Gradio/head/OpenAI call)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+# Keep LanceDB and embedding logs at INFO for diagnostics
+logging.getLogger("backend.Searching").setLevel(logging.INFO)
+logging.getLogger("backend.AssistantTools").setLevel(logging.INFO)
+logging.getLogger("backend.Assistant").setLevel(logging.INFO)
+
 dotenv.load_dotenv(override=True)
+_log = logging.getLogger(__name__)
 
 static_path = Path(__file__).parent / "static"
 
 # Setup the storage connection
-print("[bold green]✓ Initializing Azure Storage connection[/bold green]")
+_log.info("[bold green]✓ Initializing Azure Storage connection[/bold green]")
 connection_string = f"AccountName={os.getenv('AZURE_STORAGE_ACCOUNT_NAME')};AccountKey={os.getenv('AZURE_STORAGE_ACCOUNT_KEY')};EndpointSuffix=core.windows.net"
 client = TableServiceClient.from_connection_string(conn_str=connection_string)
 knowledgesearchlogs_table_name = os.getenv("KNOWLEDGE_SEARCH_LOGS_TABLE_NAME")
@@ -105,7 +118,7 @@ knowledge_search_store = Storage.KnowledgeSearchMetadataStore(
     knowledge_search_blob_store,
 )
 
-print("[bold green]✓ All storage systems initialized[/bold green]")
+_log.info("[bold green]✓ All storage systems initialized[/bold green]")
 
 app = FastAPI()
 
@@ -317,10 +330,10 @@ def create_or_update_conversation(
     ):
         conversation_title = assistant_instance.provide_conversation_title(history)
 
-    print(f"Looking at updating conversation {conversation_id} for user {username}")
+    _log.info(f"Looking at updating conversation {conversation_id} for user {username}")
 
     if os.getenv("NO_LOGS", "false").lower() == "true":
-        print(
+        _log.info(
             "[orange]⚠ NO_LOGS is set to true, skipping storing conversation[/orange]",
         )
         return conversation_title
@@ -342,7 +355,7 @@ def create_or_update_conversation(
     )
 
     if not success:
-        print(f"[bold red]✗ Failed to store conversation {conversation_id}[/bold red]")
+        _log.error(f"[bold red]✗ Failed to store conversation {conversation_id}[/bold red]")
 
     return conversation_title
 
@@ -367,7 +380,7 @@ def load_conversation(request: gr.Request, conversation_id: str):
     """
     username = request.username
 
-    print(
+    _log.info(
         f"[orange]Loading conversation {conversation_id} for user {username}[/orange]",
     )
 
@@ -382,7 +395,7 @@ def load_conversation(request: gr.Request, conversation_id: str):
         is_compatible, version_message = Version.is_compatible(stored_version or "")
 
         if not is_compatible:
-            print(
+            _log.info(
                 f"[bold red]⚠ Version incompatibility for conversation {conversation_id}: {version_message}[/bold red]",
             )
             formatted_id = f"ID: `{conversation['id']}`"
@@ -413,7 +426,7 @@ def load_conversation(request: gr.Request, conversation_id: str):
             )
 
         if version_message:  # Minor version differences
-            print(
+            _log.info(
                 f"[orange]⚠ Version warning for conversation {conversation_id}: {version_message}[/orange]",
             )
             # Add a subtle warning to the title but still load the conversation
@@ -421,7 +434,7 @@ def load_conversation(request: gr.Request, conversation_id: str):
         else:
             formatted_title = conversation["conversation_title"]
 
-        print(f"[bold green]✓ Loaded conversation {conversation_id}[/bold green]")
+        _log.info(f"[bold green]✓ Loaded conversation {conversation_id}[/bold green]")
 
         history = Assistant.CompleteHistory(conversation["messages"])
 
@@ -434,7 +447,7 @@ def load_conversation(request: gr.Request, conversation_id: str):
                 visible=True,
             ),
         )
-    print(f"[bold red]✗ Failed to load conversation {conversation_id}[/bold red]")
+    _log.error(f"[bold red]✗ Failed to load conversation {conversation_id}[/bold red]")
     history = Assistant.CompleteHistory([])
     return history, [], conversation_id, "Failed to load", gr.Button(visible=True)
 
@@ -470,7 +483,7 @@ def delete_conversation(  # noqa: PLR0913, PLR0917
         new_conversation_button = gr.Button(visible=True)
 
     if to_delete is None:
-        print("[orange]Deletion of conversation cancelled by user[/orange]")
+        _log.info("[orange]Deletion of conversation cancelled by user[/orange]")
         return (
             current_conv,
             chatbot,
@@ -493,9 +506,9 @@ def delete_conversation(  # noqa: PLR0913, PLR0917
     )
 
     if success:
-        print(f"[bold green]✓ Deleted conversation {to_delete}[/bold green]")
+        _log.info(f"[bold green]✓ Deleted conversation {to_delete}[/bold green]")
     else:
-        print(f"[bold red]✗ Failed to delete conversation {to_delete}[/bold red]")
+        _log.error(f"[bold red]✗ Failed to delete conversation {to_delete}[/bold red]")
         gr.Warning("Failed to delete conversation. Try again later.")
 
     return (
@@ -535,7 +548,7 @@ def get_user_search_history(request: gr.Request):
 
     # Get only search metadata (no full detailed data)
     searches = knowledge_search_store.get_user_search_history(username, limit=20)
-    print(f"[bold green]✓ Retrieved metadata for {len(searches)} searches[/bold green]")
+    _log.info(f"[bold green]✓ Retrieved metadata for {len(searches)} searches[/bold green]")
     return searches
 
 
@@ -547,7 +560,7 @@ def load_previous_search(request: gr.Request, search_id: str):
     """
     username = request.username
 
-    print(f"[orange]Loading search {search_id} for user {username}[/orange]")
+    _log.info(f"[orange]Loading search {search_id} for user {username}[/orange]")
 
     # Load the full search with detailed data
     search_data = knowledge_search_store.load_detailed_search(username, search_id)
@@ -593,7 +606,7 @@ def load_previous_search(request: gr.Request, search_id: str):
 
         plots = search_data.get("plots", {})
 
-        print(f"[bold green]✓ Loaded search {search_id}[/bold green]")
+        _log.info(f"[bold green]✓ Loaded search {search_id}[/bold green]")
 
         return (
             query,
@@ -612,7 +625,7 @@ def load_previous_search(request: gr.Request, search_id: str):
             plots.get("event_type"),
         )
 
-    print(f"[bold red]✗ Failed to load search {search_id}[/bold red]")
+    _log.error(f"[bold red]✗ Failed to load search {search_id}[/bold red]")
 
     return (
         "",  # query
@@ -643,7 +656,7 @@ def delete_search(
     username = request.username
 
     if search_id_to_delete is None:
-        print("[orange]Deletion of search cancelled by user[/orange]")
+        _log.info("[orange]Deletion of search cancelled by user[/orange]")
         return
 
     success = knowledge_search_store.delete_search_log(
@@ -652,9 +665,9 @@ def delete_search(
     )
 
     if success:
-        print(f"[bold green]✓ Deleted search {search_id_to_delete}[/bold green]")
+        _log.info(f"[bold green]✓ Deleted search {search_id_to_delete}[/bold green]")
     else:
-        print(f"[bold red]✗ Failed to delete search {search_id_to_delete}[/bold red]")
+        _log.error(f"[bold red]✗ Failed to delete search {search_id_to_delete}[/bold red]")
         gr.Warning("Failed to delete search. Try again later.")
 
     return
@@ -761,18 +774,65 @@ def perform_actual_search(
     settings: Searching.SearchParams,
     relevance: float,
     limit: int = 5000,
+    username: str | None = None,
 ):
-    """Execute the actual search against the vector database.
+    """Execute the actual search against the vector database with logging.
 
     Returns:
         Tuple of (results DataFrame, info dict, plots dict).
-    """
-    results, info, plots = searching_instance.knowledge_search(
-        settings,
-        relevance=relevance,
-        limit=limit,
-    )
 
+    Raises:
+        TimeoutError: If vector embedding times out.
+        Exception: Propagates underlying search errors with logging.
+    """  # noqa: DOC502
+    _log.info(
+        "perform_actual_search started: user=%s query=%r search_type=%r limit=%d relevance=%s",
+        username or "<none>",
+        settings.query,
+        settings.search_type,
+        limit,
+        relevance,
+    )
+    start = datetime.now(tz=timezone.utc)
+    try:
+        results, info, plots = searching_instance.knowledge_search(
+            settings,
+            relevance=relevance,
+            limit=limit,
+            username=username,
+        )
+    except TimeoutError as e:
+        _log.error(
+            "perform_actual_search TIMEOUT: user=%s query=%r search_type=%r limit=%d after %.2fs: %s",
+            username or "<none>",
+            settings.query,
+            settings.search_type,
+            limit,
+            (datetime.now(tz=timezone.utc) - start).total_seconds(),
+            e,
+            exc_info=True,
+        )
+        raise
+    except Exception:
+        _log.error(
+            "perform_actual_search FAILED: user=%s query=%r search_type=%r limit=%d",
+            username or "<none>",
+            settings.query,
+            settings.search_type,
+            limit,
+            exc_info=True,
+        )
+        raise
+    elapsed = (datetime.now(tz=timezone.utc) - start).total_seconds()
+    _log.info(
+        "perform_actual_search completed in %.2fs: user=%s query=%r rows=%d",
+        elapsed,
+        username or "<none>",
+        settings.query,
+        len(results) if hasattr(results, "__len__") else -1,
+    )
+    if elapsed > 15:  # noqa: PLR2004
+        _log.warning("Slow perform_actual_search: %.2fs user=%s query=%r search_type=%r", elapsed, username or "<none>", settings.query, settings.search_type)
     return results, info, plots
 
 
@@ -794,8 +854,25 @@ def perform_search(  # noqa: PLR0913, PLR0917
         gradio.Error: If the search encounters a processing error.
     """
     search_start_time = datetime.now(tz=timezone.utc)
+    _log.info(
+        "perform_search requested: user=%s query=%r year_range=%r document_type=%r modes=%r agencies=%r relevance=%s",
+        username,
+        query,
+        year_range,
+        document_type,
+        modes,
+        agencies,
+        relevance,
+    )
     error_info = None
-    try:
+    # Ensure these are defined even if create_complete_search_params fails
+    search_settings = None
+    results = None
+    results_info = {}
+    plots = {}
+    download_dict = {}
+    message = ""
+    try:  # noqa: PLW0717
         # Build complete search parameters
         search_settings = create_complete_search_params(
             query=query,
@@ -804,10 +881,12 @@ def perform_search(  # noqa: PLR0913, PLR0917
             modes=modes,
             agencies=agencies,
         )
+        _log.info("perform_search params built: %r", search_settings)
 
         results, info, plots = perform_actual_search(
             settings=search_settings,
             relevance=relevance,
+            username=username,
         )
 
         results, results_info, message, download_dict, plots = format_search_results(
@@ -818,18 +897,52 @@ def perform_search(  # noqa: PLR0913, PLR0917
             search_start_time,
             username,
         )
+        elapsed = (datetime.now(tz=timezone.utc) - search_start_time).total_seconds()
+        _log.info(
+            "perform_search succeeded in %.2fs: user=%s query=%r rows=%d",
+            elapsed,
+            username,
+            query,
+            len(results) if hasattr(results, "__len__") else -1,
+        )
 
-    except (ValueError, TypeError, KeyError) as e:
+    except TimeoutError as e:
+        elapsed = (datetime.now(tz=timezone.utc) - search_start_time).total_seconds()
+        _log.error(
+            "perform_search TIMEOUT after %.2fs: user=%s query=%r error=%s",
+            elapsed,
+            username,
+            query,
+            e,
+            exc_info=True,
+        )
         error_info = {
-            "error": str(e),
+            "error": f"TimeoutError: {e}",
+            "error_type": "TimeoutError",
             "error_trace": traceback.format_exc(),
             "occurred_at": datetime.now(tz=timezone.utc).isoformat(),
+            "query": query,
+        }
+    except Exception as e:  # noqa: BLE001
+        elapsed = (datetime.now(tz=timezone.utc) - search_start_time).total_seconds()
+        _log.error(
+            "perform_search FAILED after %.2fs: user=%s query=%r error=%s",
+            elapsed,
+            username,
+            query,
+            e,
+            exc_info=True,
+        )
+        error_info = {
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "error_trace": traceback.format_exc(),
+            "occurred_at": datetime.now(tz=timezone.utc).isoformat(),
+            "query": query,
         }
 
     if os.getenv("NO_LOGS", "false").lower() == "true":
-        print(
-            "[orange]⚠ NO_LOGS is set to true, skipping storing search log[/orange]",
-        )
+        _log.warning("NO_LOGS is true — skipping storing search log (user=%s query=%r)", username, query)
     else:
         search_id = str(uuid.uuid4())
         try:
@@ -845,16 +958,27 @@ def perform_search(  # noqa: PLR0913, PLR0917
                 message=message,
                 error_info=error_info,
             )
-            print(f"✓ Stored search log with ID: {search_id}")
+            _log.info("Stored search log: id=%s user=%s query=%r error=%s", search_id, username, query, bool(error_info))
         except Exception as e:  # noqa: BLE001
-            print(f"✗ Failed to store search log: {e}")
+            _log.error("Failed to store search log: id=%s user=%s query=%r error=%s", search_id, username, query, e, exc_info=True)
 
     if error_info is not None:
-        msg = f"An error has occurred during your search, please refresh page and try again.\nError: \n{error_info}"
+        # Provide more actionable message for timeouts (likely vector embedding hang)
+        if error_info.get("error_type") == "TimeoutError":
+            msg = (
+                "Vector search timed out — the embedding service (Azure AI) did not respond in time. "
+                "This usually means the Azure endpoint is slow or unreachable.\n"
+                f"Details: {error_info['error']}\n"
+                f"Query: {query!r}\n"
+                "Try again with a shorter query, use FTS (wrap query in quotes), or contact support with the query and time. "
+                f"Trace: {error_info['error_trace'][:2000]}"
+            )
+        else:
+            msg = f"An error has occurred during your search, please refresh page and try again.\nError: \n{error_info}"
         raise gr.Error(
             title="Error while conducting search",
             message=msg,
-            duration=5,
+            duration=8,
         )
 
     # Return plots along with results and message
@@ -1046,7 +1170,7 @@ with gr.Blocks(  # noqa: PLR1702
 
             assistant_process = new_input.change(
                 assistant_instance.process_input,
-                inputs=[current_conversation],
+                inputs=[current_conversation, username],
                 outputs=[current_conversation, chatbot_interface],
                 trigger_mode="once",
             )

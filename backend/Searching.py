@@ -3,20 +3,32 @@
 This module is used by the semantic search tool.
 """
 
+import contextvars
+import logging
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import ClassVar, Literal, NamedTuple
 
-import lancedb
-import numpy as np
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from azure.ai.inference import EmbeddingsClient
-from azure.core.credentials import AzureKeyCredential
-from lancedb.embeddings.base import TextEmbeddingFunction
-from lancedb.embeddings.registry import register
-from lancedb.embeddings.utils import TEXT
-from rich import print, table  # noqa: A004
+# Context var so embedding logs can include user even though LanceDB calls
+# generate_embeddings without explicit user param.
+_current_user: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_user", default=None)
+
+import lancedb  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import plotly.express as px  # noqa: E402
+import plotly.graph_objects as go  # noqa: E402
+from azure.ai.inference import EmbeddingsClient  # noqa: E402
+from azure.core.credentials import AzureKeyCredential  # noqa: E402
+from lancedb.embeddings.base import TextEmbeddingFunction  # noqa: E402
+from lancedb.embeddings.registry import register  # noqa: E402
+from lancedb.embeddings.utils import TEXT  # noqa: E402
+from rich import print as rich_print  # noqa: E402
+from rich import table  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 # This has to be added in manually unless https://github.com/lancedb/lancedb/issues/2518 is resolved
@@ -121,7 +133,7 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         )  # assume source input type if not passed by `compute_query_embeddings`
         return self.generate_embeddings(texts, input_type=input_type)
 
-    def generate_embeddings(
+    def generate_embeddings(  # noqa: PLR0914
         self,
         texts: list[str] | np.ndarray,
         *_args,
@@ -137,6 +149,7 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
 
         Raises:
             ValueError: If texts parameter is an np.ndarray with the wrong data type.
+            TimeoutError: If embedding request exceeds timeout.
         """
         AzureAITextEmbeddingFunction._init_client()
 
@@ -154,30 +167,109 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         # batch process so that no more than 96 texts are sent at once.
         batch_size = 96
         embeddings = []
+        total_batches = (len(texts) + batch_size - 1) // batch_size
+        embed_timeout = int(os.getenv("EMBED_TIMEOUT_SECONDS", "30"))
+        input_type = kwargs.get("input_type", "document")
+        active_user = _current_user.get()
+        user_suffix = f" user={active_user}" if active_user else ""
+        overall_start = time.perf_counter()
+        logger.info(
+            "Generating embeddings: model=%s input_type=%s texts=%d batches=%d timeout=%ds%s",
+            self.name,
+            input_type,
+            len(texts),
+            total_batches,
+            embed_timeout,
+            user_suffix,
+        )
         for i in range(0, len(texts), batch_size):
-            rs = AzureAITextEmbeddingFunction.client.embed(
-                input=texts[i : i + batch_size],
-                model=self.name,
-                dimensions=self.ndims(),
-                **kwargs,
-            )
-            embeddings.extend(emb.embedding for emb in rs.data)
+            batch = texts[i : i + batch_size]
+            batch_idx = i // batch_size + 1
+            batch_start = time.perf_counter()
+            try:
+                # Run embed in a thread with timeout so a hanging Azure call
+                # doesn't block the whole search forever.
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        AzureAITextEmbeddingFunction.client.embed,
+                        input=batch,
+                        model=self.name,
+                        dimensions=self.ndims(),
+                        **kwargs,
+                    )
+                    rs = future.result(timeout=embed_timeout)
+            except FutureTimeoutError:
+                elapsed = time.perf_counter() - batch_start
+                logger.exception("Embedding batch %d/%d TIMEOUT after %.2fs (timeout=%ds model=%s%s). "
+                    "Azure endpoint: %s — check AZURE_AI_ENDPOINT / network / API key.",
+                    batch_idx,
+                    total_batches,
+                    elapsed,
+                    embed_timeout,
+                    self.name,
+                    user_suffix,
+                    os.getenv("AZURE_AI_ENDPOINT", "<not set>"),
+                    )
+                msg = (
+                    f"Embedding request timed out after {embed_timeout}s "
+                    f"(batch {batch_idx}/{total_batches}, model={self.name}). "
+                    "This usually means the Azure AI endpoint is unreachable or slow."
+                )
+                raise TimeoutError(msg) from None
+            except Exception:
+                elapsed = time.perf_counter() - batch_start
+                logger.exception("Embedding batch %d/%d FAILED after %.2fs: model=%s%s",
+                    batch_idx,
+                    total_batches,
+                    elapsed,
+                    self.name,
+                    user_suffix,
+                    )
+                raise
+            else:
+                embeddings.extend(emb.embedding for emb in rs.data)
+        overall_elapsed = time.perf_counter() - overall_start
+        logger.info(
+            "Embedding generation completed in %.2fs: total=%d batches=%d model=%s%s",
+            overall_elapsed,
+            len(embeddings),
+            total_batches,
+            self.name,
+            user_suffix,
+        )
         return embeddings
 
     @staticmethod
     def _init_client():
         if AzureAITextEmbeddingFunction.client is None:
+            endpoint = os.getenv("AZURE_AI_ENDPOINT")
+            api_key_present = bool(os.getenv("AZURE_AI_API_KEY"))
+            logger.debug(
+                "Initializing AzureAI EmbeddingsClient: endpoint=%s api_key_present=%s model_init_pending",
+                endpoint or "<not set>",
+                api_key_present,
+            )
             if os.environ.get("AZURE_AI_API_KEY") is None:
+                logger.exception("AZURE_AI_API_KEY not found in environment variables")  # noqa: LOG004
                 msg = "AZURE_AI_API_KEY not found in environment variables"
                 raise ValueError(msg)
             if os.environ.get("AZURE_AI_ENDPOINT") is None:
+                logger.error("AZURE_AI_ENDPOINT not found in environment variables")
                 msg = "AZURE_AI_ENDPOINT not found in environment variables"
                 raise ValueError(msg)
 
-            AzureAITextEmbeddingFunction.client = EmbeddingsClient(
-                endpoint=os.environ["AZURE_AI_ENDPOINT"],
-                credential=AzureKeyCredential(os.environ["AZURE_AI_API_KEY"]),
-            )
+            try:
+                AzureAITextEmbeddingFunction.client = EmbeddingsClient(
+                    endpoint=os.environ["AZURE_AI_ENDPOINT"],
+                    credential=AzureKeyCredential(os.environ["AZURE_AI_API_KEY"]),
+                )
+                logger.debug(
+                    "AzureAI EmbeddingsClient initialized successfully: endpoint=%s",
+                    os.environ["AZURE_AI_ENDPOINT"],
+                )
+            except Exception:
+                logger.error("Failed to initialize AzureAI EmbeddingsClient")  # noqa: TRY400
+                raise
 
 
 class SearchParams(NamedTuple):
@@ -203,12 +295,12 @@ class SearchParams(NamedTuple):
     modes: list[str]
     agencies: list[str]
     location: str | None = None
-    occurrence_type: list[str] = []
+    occurrence_type: list[str] = []  # noqa: RUF012
     fatalities_range: tuple[int, int] | None = None
     injuries_range: tuple[int, int] | None = None
     metadata_filter: str | None = None
-    report_ids: list[str] = []
-    agency_ids: list[str] = []
+    report_ids: list[str] = []  # noqa: RUF012
+    agency_ids: list[str] = []  # noqa: RUF012
 
 
 class Searcher:
@@ -224,27 +316,41 @@ class Searcher:
         Raises:
             ValueError: If fails to open table.
         """
-        print("[bold]Creating searcher[/bold]")
-        print(f"connecting to database at {db_uri}")
+        logger.info("Creating Searcher: db_uri=%s table=%s", db_uri, table_name)
         self.vector_db = lancedb.connect(db_uri)
+        logger.info("LanceDB connected: uri=%s tables=%s", db_uri, self.vector_db.table_names())
         try:
             self.all_document_types_table = self.vector_db.open_table(table_name)
+            logger.info("Opened table '%s' successfully", table_name)
         except ValueError as e:
-            print(f"[bold red]Error opening table {table_name}[/bold red]")
-            print(f"Error: {e}")
-            print(f"Only {self.vector_db.table_names()} exist")
+            logger.exception("Error opening table '%s': %s. Available tables: %s",
+                table_name,
+                e,  # noqa: TRY401
+                self.vector_db.table_names(),
+                )
             raise
 
         try:
             self.report_text_table = self.vector_db.open_table("report_text")
+            logger.info("Opened report_text table")
         except ValueError:
-            print("[yellow]Warning: report_text table not found[/yellow]")
+            logger.warning("report_text table not found — report_text search disabled")
             self.report_text_table = None
 
         self.last_updated = self.all_document_types_table.list_versions()[-1][
             "timestamp"
         ].strftime("%Y-%m-%d")
         self.db_version = self.all_document_types_table.version
+        # Keep rich table for interactive CLI, but also log structured info
+        logger.info(
+            "Searcher config: uri=%s table=%s version=%s last_updated=%s rows=%d columns=%s",
+            db_uri,
+            table_name,
+            self.all_document_types_table.version,
+            self.last_updated,
+            self.all_document_types_table.count_rows(),
+            ", ".join(self.all_document_types_table.schema.names),
+        )
         searcher_config = table.Table(title="🔍 Searcher Config", show_header=True)
         searcher_config.add_column("Name")
         searcher_config.add_column("Value")
@@ -263,14 +369,15 @@ class Searcher:
             "Columns",
             ", ".join(self.all_document_types_table.schema.names),
         )
-        print(searcher_config)
+        rich_print(searcher_config)
 
         if "agency" not in self.all_document_types_table.schema.names:
+            logger.exception("agency column not found in table '%s' schema: %s", table_name, self.all_document_types_table.schema.names)  # noqa: LOG004
             msg = "agency column not found in table"
             raise ValueError(msg)
 
     @staticmethod
-    def __get_where_statement(
+    def __get_where_statement(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
         year_range: tuple[int, int],
         document_type: list[str],
         modes: list[str],
@@ -375,7 +482,7 @@ class Searcher:
         final_query: str | list[float] | None,
         where_statement: str,
     ):
-        """Print search query.
+        """Log and print search query.
 
         Parameters:
             query (str): Query text.
@@ -383,6 +490,17 @@ class Searcher:
             where_statement (str): Where clause as text.
 
         """
+        # Structured log for production
+        query_preview = (
+            final_query if isinstance(final_query, str) else f"vector({query[:80]!r})" if final_query else "None"
+        )
+        logger.debug(
+            "Search query: query=%r final_query=%r filters=%r",
+            query,
+            query_preview,
+            where_statement or "<none>",
+        )
+        # Keep rich table for local dev visibility
         query_table = table.Table(
             title="🔍 Conducting search with 🔍",
             show_header=True,
@@ -401,13 +519,15 @@ class Searcher:
             )
         if where_statement:
             query_table.add_row("Filters", where_statement)
-        print(query_table)
+        if logger.isEnabledFor(logging.DEBUG):
+            rich_print(query_table)
 
-    def knowledge_search(
+    def knowledge_search(  # noqa: C901, PLR0912
         self,
         params: SearchParams,
         limit: int = 150,
         relevance: float = 0,
+        username: str | None = None,
     ) -> tuple[pd.DataFrame, dict, list | None]:
         """Run query.
 
@@ -415,24 +535,23 @@ class Searcher:
             params (SearchParams): Search parameters.
             limit (int): Maximum number of results to return. Defaults to 150.
             relevance (float): Relevance criteria. Defaults to 0.
+            username (str | None): Active user for log correlation.
 
         Returns:
             results (DataFrame): Results as a Pandas DataFrame.
-            info (dict): Additional info (eg, info messages, # of records found).
+            info (dict): Additional info.
             plots: Plots to display.
 
         Raises:
-            ValueError: If incorrect search type (not "fts" or "vector").
-        """
-        info = {
-            "info_message": "",
-        }
+            ValueError: If incorrect search type.
 
-        # Add info message
+        """
+        token = _current_user.set(username) if username else None
+        search_start = time.perf_counter()
+        logger.info("knowledge_search called: user=%s query=%r search_type=%r limit=%d", username or "<none>", params.query, params.search_type, limit)
+        info: dict = {"info_message": ""}
         if "TSB" in params.agencies and "summary" in params.document_type:
-            info["info_message"] += (
-                "Summaries are only available for ATSB and TAIC reports, not TSB reports.\n"
-            )
+            info["info_message"] += "Summaries are only available for ATSB and TAIC reports, not TSB reports.\n"
 
         where_statement = self.__get_where_statement(
             year_range=params.year_range,
@@ -451,95 +570,80 @@ class Searcher:
         final_query: list[float] | str | None = None
         if not params.query or params.query is None:
             final_query = None
-            # Fix up error with LLM not providing the right parameters
             params = params._replace(search_type=None)
         elif params.search_type in {"fts", "vector"}:
             final_query = params.query
         else:
+            if token:
+                _current_user.reset(token)
             msg = f"type must be 'fts' or 'vector' not {params.search_type}"
             raise ValueError(msg)
 
-        self.__print_search_query(params.query, final_query, where_statement)
+        try:  # noqa: PLW0717
+            search = self.all_document_types_table.search(
+                final_query, query_type=params.search_type)
+            if params.search_type == "vector":
+                search = search.metric("cosine")
+            results = (
+                search.where(where_statement, prefilter=True).limit(limit).to_pandas()
+            ).drop(columns=["vector"])
 
-        search = self.all_document_types_table.search(
-            final_query,
-            query_type=params.search_type,
+            if final_query is not None:
+                if "_distance" in results.columns:
+                    results["_distance"] = 1 - results["_distance"]
+                results = results.rename(columns={
+                    "_relevance_score": "relevance", "_score": "relevance", "_distance": "relevance"})
+                results = results.sort_values(by=["relevance"], ascending=False).reset_index(drop=True)
+                cols = ["relevance"] + [c for c in results.columns if c != "relevance"]
+                results = results[cols]
+                if relevance > 0:
+                    results = results[results["relevance"] >= relevance]
+
+            info["total_results"] = len(results)
+            info["relevant_results"] = len(results)
+
+            results["mode"] = results["mode"].apply(
+                lambda x: {"0": "aviation", "1": "rail", "2": "maritime"}.get(str(x).strip(), str(x)))
+
+            plots = {
+                "document_type": GraphMaker(results).get_document_type_pie_chart(),
+                "mode": GraphMaker(results).get_mode_pie_chart(),
+                "year": GraphMaker(results).get_year_histogram(),
+                "event_type": GraphMaker(results).get_most_common_event_types(),
+                "agency": GraphMaker(results).get_agency_pie_chart(),
+            }
+
+        except Exception:
+            logger.exception("knowledge_search failed user=%s query=%r", username or "<none>", params.query)
+            if token:
+                _current_user.reset(token)
+            raise
+
+        total_elapsed = time.perf_counter() - search_start
+        info["search_duration_seconds"] = round(total_elapsed, 2)
+        logger.info(
+            "knowledge_search results: query=%r total=%d relevant=%d elapsed=%.2fs user=%s",
+            params.query, info["total_results"], info["relevant_results"], total_elapsed, username or "<none>",
         )
+        if total_elapsed > 20:  # noqa: PLR2004
+            logger.warning("Slow knowledge_search: %.2fs user=%s query=%r", total_elapsed, username or "<none>", params.query)
 
-        if params.search_type == "vector":
-            search = search.metric("cosine")
-
-        results = (
-            search.where(where_statement, prefilter=True).limit(limit).to_pandas()
-        ).drop(columns=["vector"])
-
-        print(
-            f"[bold green]Found {len(results)} results for query: {params.query}[/bold green]",
-        )
-
-        info["total_results"] = len(results)
-
-        # Clean up the relevance score column so that it is always sorted in descending order
-        if final_query is not None:
-            if "_distance" in results.columns:
-                results["_distance"] = 1 - results["_distance"]
-            results = results.rename(
-                columns={
-                    "_relevance_score": "relevance",
-                    "_score": "relevance",
-                    "_distance": "relevance",
-                },
-            )
-            results = results.sort_values(by=["relevance"], ascending=False)
-            results = results.reset_index(drop=True)
-
-            cols = ["relevance"] + [
-                col for col in results.columns if col != "relevance"
-            ]
-            results = results[cols]
-
-            print(
-                f"[bold]Relevance scores range from {results['relevance'].min():.4f} to {results['relevance'].max():.4f} with mean {results['relevance'].mean():.4f}[/bold]",
-            )
-
-            if relevance > 0:
-                print(
-                    f"[bold yellow]Filtering results to only include relevance >= {relevance}[/bold yellow]",
-                )
-                results = results[results["relevance"] >= relevance]
-        info["relevant_results"] = len(results)
-        print(
-            f"[bold green]Found {info['relevant_results']} relevant results for query: {params.query}[/bold green]",
-        )
-
-        mode_map = {"0": "aviation", "1": "rail", "2": "maritime"}
-        results["mode"] = results["mode"].apply(
-            lambda x: mode_map.get(str(x).strip(), str(x)),
-        )
-
-        graph_maker = GraphMaker(results)
-
-        plots = {
-            "document_type": graph_maker.get_document_type_pie_chart(),
-            "mode": graph_maker.get_mode_pie_chart(),
-            "year": graph_maker.get_year_histogram(),
-            "event_type": graph_maker.get_most_common_event_types(),
-            "agency": graph_maker.get_agency_pie_chart(),
-        }
-
+        if token:
+            _current_user.reset(token)
         return results, info, plots
-
 
     def knowledge_search_report_text(
         self,
         params: SearchParams,
         limit: int = 50,
+        username: str | None = None,
     ) -> tuple[pd.DataFrame, dict]:
         """Search the report_text table using FTS.
 
         Parameters:
             params: Search parameters.
             limit: Maximum number of results. Defaults to 50.
+            username (str | None): Active user for log correlation.
 
         Returns:
             results: Results as a Pandas DataFrame.
@@ -549,6 +653,7 @@ class Searcher:
             ValueError: If report_text table is not available.
         """
         if self.report_text_table is None:
+            logger.exception("report_text table not available for user=%s query=%r", username or "<none>", params.query)  # noqa: LOG004
             msg = "report_text table is not available"
             raise ValueError(msg)
 
@@ -567,45 +672,73 @@ class Searcher:
         )
 
         self.__print_search_query(params.query, params.query, where_statement)
-
-        search = self.report_text_table.search(
+        search_start = time.perf_counter()
+        logger.debug(
+            "report_text search started: query=%r limit=%d filters=%r user=%s",
             params.query,
-            query_type="fts",
+            limit,
+            where_statement or "<none>",
+            username or "<none>",
         )
 
-        if where_statement:
-            results = search.where(where_statement, prefilter=True).limit(limit).to_pandas()
-        else:
-            results = search.limit(limit).to_pandas()
+        try:
+            search = self.report_text_table.search(
+                params.query,
+                query_type="fts",
+            )
+
+            if where_statement:
+                results = search.where(where_statement, prefilter=True).limit(limit).to_pandas()
+            else:
+                results = search.limit(limit).to_pandas()
+        except Exception:
+            logger.error(  # noqa: TRY400
+                "report_text search FAILED: query=%r limit=%d filters=%r user=%s",
+                params.query,
+                limit,
+                where_statement,
+                username or "<none>",
+                )
+            raise
 
         if "_score" in results.columns:
             results = results.rename(columns={"_score": "relevance"})
             results = results.sort_values(by=["relevance"], ascending=False)
             results = results.reset_index(drop=True)
 
-        print(
-            f"[bold green]Found {len(results)} results from report_text for query: {params.query}[/bold green]",
+        elapsed = time.perf_counter() - search_start
+        logger.debug(
+            "report_text search completed in %.2fs: query=%r rows=%d user=%s",
+            elapsed,
+            params.query,
+            len(results),
+            username or "<none>",
         )
+        if elapsed > 10:  # noqa: PLR2004
+            logger.warning("Slow report_text search: %.2fs query=%r rows=%d user=%s", elapsed, params.query, len(results), username or "<none>")
 
         info = {"total_results": len(results)}
 
         return results, info
 
-    def read_report(self, report_id: str | None = None, agency_id: str | None = None) -> str | None:
-        """Retrieve the full text of a report from the report_text table.
+    def read_report(self, report_id: str | None = None, agency_id: str | None = None, username: str | None = None) -> str | None:
+        r"""Retrieve the full text of a report from the report_text table.
 
         Parameters:
             report_id: The report ID to look up (e.g. \"ATSB_a_2000_648\").
             agency_id: The agency's own ID to look up (e.g. \"AO-2000-003\").
+            username (str | None): Active user for log correlation.
 
         Returns:
             The full document text, or None if not found.
-        """
+        """  # noqa: DOC501
         if self.report_text_table is None:
+            logger.exception("read_report table not available for user=%s", username or "<none>")  # noqa: LOG004
             msg = "report_text table is not available"
             raise ValueError(msg)
 
         if not report_id and not agency_id:
+            logger.warning("read_report missing identifier for user=%s", username or "<none>")
             msg = "Either report_id or agency_id must be provided"
             raise ValueError(msg)
 
@@ -616,22 +749,24 @@ class Searcher:
             filter_expr = f"agency_id = '{agency_id}'"
             identifier = agency_id
 
-        results = (
-            self.report_text_table.search()
-            .where(filter_expr)
-            .limit(1)
-            .to_pandas()
-        )
+        try:
+            results = (
+                self.report_text_table.search()
+                .where(filter_expr)
+                .limit(1)
+                .to_pandas()
+            )
+        except Exception:
+            logger.error("read_report FAILED for %s=%r user=%s", "report_id" if report_id else "agency_id", identifier, username or "<none>")  # noqa: TRY400
+            raise
 
         if results.empty:
-            print(f"[yellow]No report found with {identifier}[/yellow]")
+            logger.warning("No report found with %r user=%s", identifier, username or "<none>")
             return None
 
         row = results.iloc[0]
         found_id = row.get("report_id", identifier)
-        print(
-            f"[bold green]Found report {found_id} with {len(row['document'])} characters[/bold green]",
-        )
+        logger.info("Found report %s with %d characters (requested %r) user=%s", found_id, len(row["document"]), identifier, username or "<none>")
         return row["document"]
 
 

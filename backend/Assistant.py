@@ -6,19 +6,24 @@ Contains three classes:
 - the CompleteHistory class, which manages the history.
 """
 
+import hashlib
 import json
+import logging
+import time
 from collections.abc import Generator
 from datetime import datetime, timezone
 
 import openai
-from rich import print  # noqa: A004
+from rich import print as rich_print
 
-from .AssistantTools import (
+logger = logging.getLogger(__name__)
+
+from .AssistantTools import (  # noqa: E402
     AnalyzeResultsTool,
     DelegateTool,
     DocumentationTool,
-    ReadReportTool,
     FindRelevantReports,
+    ReadReportTool,
     SearchTool,
     SkillsTool,
 )
@@ -64,7 +69,7 @@ class CompleteHistory(list):  # noqa: FURB189
         try:
             self.format_check()
         except ValueError as e:
-            print(f"[red]Warning: History format issue on init: {e}[/red]")
+            logger.warning("History format issue on init: %s", e, exc_info=True)
             self.fix_format()
 
     def fix_format(self):
@@ -96,7 +101,7 @@ class CompleteHistory(list):  # noqa: FURB189
         self.clear()
         self.extend(new_history)
 
-    def format_check(self):
+    def format_check(self):  # noqa: C901, PLR0912
         """Check history format is correct.
 
         Check that the history is in the correct format.
@@ -239,10 +244,7 @@ class CompleteHistory(list):  # noqa: FURB189
             ai_call: function call details
         """
         args = ai_call.get("arguments", {})
-        if isinstance(args, str):
-            args = args
-        else:
-            args = str(args)
+        args = args if isinstance(args, str) else str(args)
         self.append(
             {
                 "display": {
@@ -393,7 +395,7 @@ Just respond with the title and nothing else.
         """
 
     @staticmethod
-    def general_info(columns, rows, last_updated):
+    def general_info(columns, rows, last_updated):  # noqa: ARG004
         """Returns general context of the user's query."""
         return f"""
 Below is general information to help you contextualise the user's query.
@@ -484,7 +486,7 @@ When the user asks for 'recent' information, if ambiguous, get them to clarify i
 Only published investigation are in your database, so recent occurrences may be missed.
 You can also ask to clarify with the user which duration counts as recent.
 
-When you conduct a search, if the information you are looking for is in other fields than the 'document' field, you may conduct a SearchTool function call for 'summary' document type with `exlcude_document` which will reduce context bloat. The use of 'summary' document type is that it has exactly one entry per report for ATSB and TAIC (note this will not work for TSB as their summaires are not included in the database).
+When you conduct a search, if the information you are looking for is in other fields than the 'document' field, you may conduct a SearchTool function call for 'summary' document type with `exclude_document=true` which will reduce context bloat. The use of 'summary' document type is because it has exactly one entry per report for ATSB and TAIC (note this will not work for TSB as their summaries are not included in the database).
 
 When the search result contains the maximum number of results, consider if you need to break down your search into several more specific searches to ensure key information is not missing.
 When you do a vector search sorted by relevance, this may not be necessary if there are no more relevant results towards the end of the results.
@@ -536,7 +538,7 @@ class Assistant:
         openai_endpoint=None,
     ):
         """Constructor."""
-        print("[bold]Creating Chatbot[/bold]")
+        logger.info("Creating Chatbot: openai_endpoint=%s", openai_endpoint or "<default>")
         self.searcher = searcher
         if openai_endpoint:
             self.openai_client = openai.OpenAI(
@@ -562,7 +564,8 @@ class Assistant:
         self.tools.append(delegate)
         self.tool_map[delegate.name] = delegate
 
-        print("[bold]Chatbot created[/bold]")
+        logger.info("Chatbot created: tools=%s", list(self.tool_map.keys()))
+        rich_print("[bold]Chatbot created[/bold]")
 
     def provide_conversation_title(
         self,
@@ -619,6 +622,7 @@ class Assistant:
         history: CompleteHistory,
         function_call,
         chunk,
+        username: str | None = None,
     ) -> Generator[tuple[CompleteHistory, list[dict], bool], None, None]:
         """Complete a tool use by executing the tool and returning the result.
 
@@ -631,13 +635,42 @@ class Assistant:
 
         # Execute the function
         tool_name = function_call.name
-        tool_args = json.loads(function_call.arguments)
-
+        raw_args = function_call.arguments
+        try:
+            tool_args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
+        except Exception:
+            logger.exception("Failed to parse tool_args for %s user=%s: %r", tool_name, username or "<none>", raw_args)
+            tool_args = {}
+        # Propagate user to tools that support it (e.g., SearchTool)
+        if username and "username" not in tool_args and "user" not in tool_args:
+            # Only inject for search-like tools; other tools will ignore via **kwargs pop
+            tool_args["username"] = username
+        logger.info("Tool call: %s user=%s query=%r", tool_name, username or "<none>", tool_args.get("query", tool_args.get("skill_name", tool_args.get("report_id", ""))) if isinstance(tool_args, dict) else str(tool_args)[:100])
+        tool_start = time.perf_counter()
         tool = self.tool_map.get(tool_name)
         if not tool:
             result = f"Error: Unknown tool {tool_name}"
+            logger.exception("Unknown tool requested: %s user=%s", tool_name, username or "<none>")  # noqa: LOG004
         else:
-            result = tool.execute(**tool_args)
+            try:
+                result = tool.execute(**tool_args)
+                elapsed = time.perf_counter() - tool_start
+                result_hash = hashlib.sha256(result.encode("utf-8")).hexdigest()[:16] if result else "empty"
+                logger.debug(
+                    "Tool %s completed in %.2fs user=%s hash=%s len=%d",
+                    tool_name,
+                    elapsed,
+                    username or "<none>",
+                    result_hash,
+                    len(result) if result else 0,
+                )
+            except Exception as e:
+                elapsed = time.perf_counter() - tool_start
+                logger.exception("Tool %s failed user=%s query=%r", tool_name, username or "<none>", tool_args.get("query", ""))
+                if isinstance(e, TimeoutError):
+                    result = f"Tool {tool_name} timed out after {elapsed:.1f}s: {e}. Check Azure AI embedding service."
+                else:
+                    result = f"Error executing {tool_name}: {e}"
 
         # Add function result to history
         history.complete_function_call(
@@ -650,12 +683,14 @@ class Assistant:
         self,
         response: openai.Stream,
         history: CompleteHistory,
+        username: str | None = None,
     ) -> Generator[tuple[CompleteHistory, list[dict], bool], None, None]:
         """Process a streamed response from OpenAI, handling both text and function calls.
 
         Args:
             response: Streamed response from OpenAI API
             history: The conversation history to update
+            username: Active user for log correlation.
 
         Yields:
             tuple: (updated_history, gradio_formatted_history, has_function_calls)
@@ -695,6 +730,7 @@ class Assistant:
                     history=history,
                     function_call=function_calls[chunk.output_index],
                     chunk=chunk,
+                    username=username,
                 )
             # Handle message done and yield final message
             elif (
@@ -706,6 +742,7 @@ class Assistant:
     def process_input(
         self,
         history: CompleteHistory,
+        username: str | None = None,
     ) -> Generator[tuple[CompleteHistory, list[dict]], None, None]:
         """Process user input and generate a response using the orient/plan/act loop.
 
@@ -719,6 +756,7 @@ class Assistant:
 
         Args:
             history: The conversation history containing the user's latest message
+            username: Active user for log correlation.
 
         Yields:
             tuple: (updated_history, gradio_formatted_history) after each update
@@ -729,13 +767,16 @@ class Assistant:
         """
         # Validate inputs
         if not isinstance(history, CompleteHistory):
+            logger.error("process_input called with wrong history type: %s user=%s", type(history), username or "<none>")
             msg = "history must be a CompleteHistory instance"
             raise TypeError(msg)
         if len(history) == 0:
+            logger.error("process_input called with empty history user=%s", username or "<none>")
             msg = "history is empty"
             raise ValueError(msg)
 
-        print(f"[bold]Processing user input {history[-1]['display']['content']}[/bold]")
+        user_msg = history[-1]["display"]["content"] if history else "<empty>"
+        logger.info("Processing user input: %r (history_len=%d) user=%s", user_msg[:200], len(history), username or "<none>")
 
         # Prepare system messages with context
         general_info = AssistantPrompts.general_info(
@@ -758,6 +799,7 @@ class Assistant:
                 store=False,
                 stream=True,
                 tool_choice="none",  # No tool calls in planning phase
+                reasoning={"effort": "xhigh"},
             )
 
             # Stream the planning thoughts to the UI
@@ -780,6 +822,7 @@ class Assistant:
                 parallel_tool_calls=True,
                 store=False,
                 stream=True,
+                reasoning={"effort": "xhigh"},
             )
 
             # Process the action response (handles both text and function calls)
@@ -787,6 +830,7 @@ class Assistant:
             for history_update, gradio_update, had_calls in self.process_streamed_input(
                 act_response,
                 history,
+                username=username,
             ):
                 history = history_update
                 has_function_calls = had_calls

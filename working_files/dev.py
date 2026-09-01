@@ -99,7 +99,8 @@ class DocsRebuilder(FileSystemEventHandler):
         self.pending_rebuild = False
 
         logger.debug("\n🔄 Change detected: %s", Path(changed_file).name)
-        logger.info("📚 Rebuilding docs...")
+        # Use DEBUG to avoid spamming production/dev INFO logs during vector search
+        logger.debug("📚 Rebuilding docs... (triggered by %s)", Path(changed_file).name)
 
         try:
             result = subprocess.run(  # noqa: S603

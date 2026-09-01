@@ -5,6 +5,7 @@ This provides a base class for blob storage operations and specialized classes f
 
 import contextlib
 import json
+import logging
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -14,9 +15,10 @@ import plotly.io
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.data.tables import TableClient
 from azure.storage.blob import BlobServiceClient
-from rich import print  # noqa: A004
 
-from . import Searching, Version
+logger = logging.getLogger(__name__)
+
+from . import Searching, Version  # noqa: E402
 
 
 class BaseBlobStore(ABC):
@@ -465,7 +467,7 @@ class ConversationMetadataStore:
                 row_key=conversation_id,
             )
         except ResourceNotFoundError:
-            print(f"Conversation {conversation_id} not found for user {username}")
+            logger.warning("Conversation %s not found for user %s", conversation_id, username)
             return False
         else:
             entity["deleted"] = True
@@ -475,7 +477,7 @@ class ConversationMetadataStore:
             try:
                 self.table_client.update_entity(entity)
             except HttpResponseError as e:
-                print(f"Error marking conversation as deleted: {e}")
+                logger.exception("Error marking conversation %s as deleted for user %s: %s", conversation_id, username, e)  # noqa: TRY401
                 return False
             return True
 
@@ -671,7 +673,7 @@ class KnowledgeSearchMetadataStore:
             key: plotly.io.from_json(plot_dict) if plot_dict is not None else None
             for key, plot_dict in results_dict["plots"].items()
         }
-        print(f"Loaded {download_dict['settings']}")
+        logger.info("Loaded detailed search %s: settings=%r", search_id, download_dict["settings"])
 
         # Combine metadata and detailed data
         return {

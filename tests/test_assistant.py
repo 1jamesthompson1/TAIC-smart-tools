@@ -87,7 +87,7 @@ def test_complete_history_gradio_format():
     assert "Found 3 relevant ATSB investigations." in function_call["display"]["content"]
     # Verify ai format flattens correctly
     ai_format = history.openai_format()
-    assert len(ai_format) == 6  # user, assistant, user, thought, function_call, function_call_output
+    assert len(ai_format) == 6  # user, assistant, user, thought, function_call, function_call_output  # noqa: PLR2004
     assert ai_format[-1]["type"] == "function_call_output"
     assert ai_format[-1]["output"] == "Found 3 relevant ATSB investigations."
     assert ai_format[-2]["type"] == "function_call"
