@@ -85,6 +85,8 @@ Document types:
 
 For more quantitative analysis you might find that the analyze_results tool or the search_report_text tool are more useful. Particularly for metadata filtering (i.e counts of occurrences by aircraft types etc) using the search_report_text tool would be better.
 
+To reduce context overhead when you only need metadata/counts/IDs (not the document text), set exclude_document=true. This omits the large 'document' column from results so you can retrieve many more rows within the context window.
+
 Examples:
 # Filter-only: find all helicopter safety issues since 2020
 search(query="", year_range=[2020, 2026], document_type=["safety_issue"], modes=["0"], agencies=["TAIC", "ATSB", "TSB"], metadata_filter="aircraft_type=Helicopter")
@@ -106,6 +108,9 @@ search(query="engine failure", search_type="fts", year_range=[2020, 2026], docum
 
 # Filter-only by metadata: find piston-engine aircraft accidents
 search(query="", year_range=[2000, 2023], document_type=["safety_issue", "section"], modes=["0"], agencies=["TAIC", "ATSB"], metadata_filter="type_of_engines=piston")
+
+# Filter-only metadata lookup without document text (low overhead, returns more rows)
+search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recommendation"], modes=["0", "1", "2"], agencies=["TAIC", "ATSB", "TSB"], exclude_document=true, limit=500)
 """
     _tool_parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
@@ -176,6 +181,11 @@ search(query="", year_range=[2000, 2023], document_type=["safety_issue", "sectio
                 "description": "Filter by agency IDs (e.g. ['AO-2000-003', '200002648']).",
                 "items": {"type": "string"},
             },
+            "exclude_document": {
+                "type": "boolean",
+                "description": "If true, exclude the large 'document' text column from results to reduce context overhead. Useful for filter-only / metadata exploration where you only need counts, IDs, or other columns. Default false (document included).",
+                "default": False,
+            },
         },
         "required": [
             "query",
@@ -200,8 +210,16 @@ search(query="", year_range=[2000, 2023], document_type=["safety_issue", "sectio
             str: Markdown formatted search results.
         """
         limit = kwargs.pop("limit", 150)
+
+        exclude_document = kwargs.pop("exclude_document", False)
+
+        # Ensure search_type has a default for filter-only searches
+        if "search_type" not in kwargs or kwargs["search_type"] is None:
+            kwargs.setdefault("search_type", None)
+
+        search_params = SearchParams(**kwargs)
         results, info, _plots = self.searcher.knowledge_search(
-            SearchParams(**kwargs),
+            search_params,
             limit=limit,
         )
 
@@ -211,17 +229,28 @@ search(query="", year_range=[2000, 2023], document_type=["safety_issue", "sectio
         summary = f"**Search results:** {info.get('relevant_results', len(results))} relevant out of {len(results)} total"
         if info.get("info_message"):
             summary += f"\n_{info['info_message']}_"
+        if exclude_document:
+            summary += "\n_document column excluded (exclude_document=true) — reduced context overhead_"
 
-        results["agency_id"] = results.apply(
-            lambda row: (
-                row["agency_id"]
-                if pd.isna(row["url"])
-                else f"<a href='{row['url']}'>{row['agency_id']}</a>"
-            ),
-            axis=1,
+        # Make agency_id clickable if URL present, only if columns exist
+        if "agency_id" in results.columns and "url" in results.columns:
+            results["agency_id"] = results.apply(
+                lambda row: (
+                    row["agency_id"]
+                    if pd.isna(row["url"])
+                    else f"<a href='{row['url']}'>{row['agency_id']}</a>"
+                ),
+                axis=1,
+            )
+
+        # Always drop internal / redundant columns if present
+        results = results.drop(
+            columns=[c for c in ["url", "year", "agency", "report_id"] if c in results.columns]
         )
 
-        results = results.drop(columns=["url", "year", "agency", "report_id"])
+        # Optionally drop the large document column to save context
+        if exclude_document and "document" in results.columns:
+            results = results.drop(columns=["document"])
 
         md = results.to_html(index=False, escape=False)
 

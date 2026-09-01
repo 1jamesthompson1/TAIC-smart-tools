@@ -484,7 +484,7 @@ When the user asks for 'recent' information, if ambiguous, get them to clarify i
 Only published investigation are in your database, so recent occurrences may be missed.
 You can also ask to clarify with the user which duration counts as recent.
 
-When you conduct a search, if the information you are looking for is in other fields than the 'document' field, conduct the search in the summary section only.
+When you conduct a search, if the information you are looking for is in other fields than the 'document' field, you may conduct a SearchTool function call for 'summary' document type with `exlcude_document` which will reduce context bloat. The use of 'summary' document type is that it has exactly one entry per report for ATSB and TAIC (note this will not work for TSB as their summaires are not included in the database).
 
 When the search result contains the maximum number of results, consider if you need to break down your search into several more specific searches to ensure key information is not missing.
 When you do a vector search sorted by relevance, this may not be necessary if there are no more relevant results towards the end of the results.
