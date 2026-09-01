@@ -799,7 +799,6 @@ class Assistant:
                 store=False,
                 stream=True,
                 tool_choice="none",  # No tool calls in planning phase
-                reasoning={"effort": "xhigh"},
             )
 
             # Stream the planning thoughts to the UI
@@ -822,7 +821,6 @@ class Assistant:
                 parallel_tool_calls=True,
                 store=False,
                 stream=True,
-                reasoning={"effort": "xhigh"},
             )
 
             # Process the action response (handles both text and function calls)
