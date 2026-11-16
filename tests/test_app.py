@@ -118,7 +118,8 @@ class TestToolsFunctions:
         ) = perform_search(
             username="testuser",
             query=query,
-            year_range=[2010, 2024],
+            year_range_start=2010,
+            year_range_end=2024,
             document_type=["Safety issues"],
             modes=[0, 1, 2],
             agencies=["TAIC"],
@@ -240,7 +241,7 @@ class TestConversationFunctions:
         # Now delete it
         request = Mock(username="testuser")
         current_conv = CompleteHistory([])
-        chatbot = gr.Chatbot(value=[], type="messages")
+        chatbot = gr.Chatbot(value=[])
         current_conv_id = None  # Not the one being deleted
         current_conv_title = None
         to_delete = conversation_id
@@ -273,7 +274,7 @@ class TestConversationFunctions:
         request = Mock(username="testuser")
         current_conv = CompleteHistory([])
         current_conv.add_message("user", "test")
-        chatbot = gr.Chatbot(value=current_conv.gradio_format(), type="messages")
+        chatbot = gr.Chatbot(value=current_conv.gradio_format())
         current_conv_id = "test_conv_id"
         current_conv_title = "Test Title"
         to_delete = None  # Cancelled

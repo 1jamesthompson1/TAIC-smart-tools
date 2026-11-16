@@ -6,16 +6,15 @@ authors = [{ name = "James Thompson", email = "1jamesthompson1@gmail.com" }]
 requires-python = ">=3.10,<3.13"
 readme = "README.md"
 dependencies = [
-    "gradio>=5.26.0,<6",
+    "gradio>=6.32.0,<7",
     "python-dotenv>=1.0.1,<2",
     "openai>=1.55.1,<2",
     "lancedb>=0.37.0,<0.38.0", # Keep in sync with TAIC-engine
     "rich>=13.9.4,<14",
     "authlib>=1.3.2,<2",
-    "fastapi[standard]>=0.115.6,<0.116",
-    "starlette[full]>=0.41.0,<0.42",
+    "fastapi[standard]>=0.162.5,<0.163",
+    "starlette[full]>=1.7.0,<2.0",
     "azure-data-tables>=12.6.0,<13",
-    "gradio-rangeslider>=0.0.8,<0.0.9",
     "pydantic>=2.10.6,<3",
     "plotly>=6.0.1,<7",
     "openpyxl>=3.1.5,<4",
@@ -64,7 +63,7 @@ preview = true
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90", "I", "N", "UP", "YTT", "S", "BLE", "FBT", "B", "A", "COM", "C4", "DTZ", "T10", "DJ", "EM", "EXE", "FA", "ISC", "ICN", "G", "INP", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SLOT", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "ERA", "PD", "PGH", "PL", "TRY", "FLY", "NPY", "AIR", "PERF", "FURB", "LOG", "RUF", "D", "DOC"]
 ignore = ["E501", "N999", "D203", "D213"]  # D203/D213 conflict with D211/D212
-per-file-ignores = {"tests/*.py" = ["S101"], "**/*.ipynb" = ["T201"], "working_files/*" = ["PLW0717"]}
+per-file-ignores = { "tests/*.py" = ["S101"], "**/*.ipynb" = ["T201"], "working_files/*" = ["PLW0717"], "backend/AssistantTools.py" = ["DOC501", "EM101", "EM102", "TRY003"] }
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
