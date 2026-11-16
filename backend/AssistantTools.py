@@ -5,7 +5,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -240,8 +240,14 @@ search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recomm
                 )
             return f"Search failed after {elapsed:.1f}s: {e}"
 
+        analysis_results = results
+        if exclude_document and "document" in analysis_results.columns:
+            analysis_results = analysis_results.drop(columns=["document"])
         if self.analyze_tool is not None:
-            self.analyze_tool.update_results(results)
+            self.analyze_tool.update_results(
+                analysis_results,
+                document_excluded=exclude_document,
+            )
 
         summary = f"**Search results:** {info.get('relevant_results', len(results))} relevant out of {len(results)} total"
         if info.get("info_message"):
@@ -324,73 +330,432 @@ class DocumentationTool(Tool):
         return "\n\n".join(found_documents)
 
 
+class AnalysisError(ValueError):
+    """Raised when an analysis operation is invalid or cannot be completed."""
+
+
 class AnalyzeResultsTool(Tool):
-    """Tool for running pandas queries on the last search results for quantitative analysis."""
+    """Tool for running simple statistics on the last search results."""
 
     _tool_name = "analyze_results"
-    _tool_description = """Run simple pandas queries on the last search results to get quantitative insights.
-Use column names from the search results: document, document_id, report_id, agency_id, year, mode, agency, document_type, location, occurrence_type, fatalities, injuries, relevance.
+    _tool_description = """Calculate simple statistics on the last search results.
+
+Pass `fn` and `column` (except for fn="size"), plus optional `by` to group the results.
+If `by` is omitted you get one number; if `by` is provided you get one row per group.
+
+`fn` is one of: size, count, nunique, sum, mean, median, min, max, std. `size` counts rows and needs no column.
+Optional `filters` maps a column to a value, a list (match any), or an operator object such as
+{">": 0} or {"contains": "engine failure"}. Supported operators: ==, !=, >, >=, <, <=, in, not_in, contains.
+`contains` is case-insensitive and works on text columns.
+Optional `distinct_by` deduplicates rows before calculating, e.g. "report_id" to count each report once.
+Optional `round` rounds numbers and `limit` caps grouped rows (default 50, max 200).
+
+Useful columns: document, document_type, agency, mode, year, fatalities, injuries, report_id, occurrence_type, location.
 
 Examples:
-# Count by document type
-df['document_type'].value_counts().to_dict()
-
-# Filter and count
-df[df['agency'] == 'TAIC']['report_id'].nunique()
-
-# Group by year
-df.groupby('year').size().to_dict()
-
-# Average fatalities
-df['fatalities'].mean()
-
-# Count unique reports
-df['report_id'].nunique()
+- Average fatalities per report: {"fn": "mean", "column": "fatalities", "distinct_by": "report_id"}
+- Average fatalities in fatal accidents: {"fn": "mean", "column": "fatalities", "filters": {"fatalities": {">": 0}}, "distinct_by": "report_id"}
+- Average fatalities in aviation: {"fn": "mean", "column": "fatalities", "filters": {"mode": "0"}}
+- Reports mentioning engine failure: {"fn": "size", "filters": {"document": {"contains": "engine failure"}}, "distinct_by": "report_id"}
+- Count by document type: {"fn": "size", "by": ["document_type"]}
+- Unique reports by agency: {"fn": "nunique", "column": "report_id", "by": ["agency"]}
 """
     _tool_parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
-            "expression": {
+            "fn": {
                 "type": "string",
-                "description": "A pandas expression using 'df' as the last search results DataFrame. Returns str/repr of the result.",
+                "enum": [
+                    "size",
+                    "count",
+                    "nunique",
+                    "sum",
+                    "mean",
+                    "median",
+                    "min",
+                    "max",
+                    "std",
+                ],
+                "description": "Aggregation function. Use size for row counts.",
+            },
+            "column": {
+                "type": "string",
+                "description": "Column to analyse. Required unless fn is size.",
+            },
+            "by": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional group-by column(s). Omit for a single value.",
+            },
+            "filters": {
+                "type": "object",
+                "description": "Optional filters. Values may be scalars, lists, or operator objects, e.g. {'fatalities': {'>': 0}, 'location': {'contains': 'Wellington'}}.",
+            },
+            "distinct_by": {
+                "type": "string",
+                "description": "Optional column to deduplicate on before calculating, e.g. report_id.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum grouped rows. Default 50, max 200.",
+            },
+            "round": {
+                "type": "integer",
+                "description": "Round numeric results to this many decimal places (0-6).",
             },
         },
-        "required": ["expression"],
+        "required": ["fn"],
     }
+
+    _ALLOWED_PARAMS: ClassVar[set[str]] = {
+        "fn",
+        "column",
+        "by",
+        "filters",
+        "distinct_by",
+        "limit",
+        "round",
+    }
+    _AGGREGATIONS: ClassVar[set[str]] = {
+        "size",
+        "count",
+        "nunique",
+        "sum",
+        "mean",
+        "median",
+        "min",
+        "max",
+        "std",
+    }
+    _COMPARISONS: ClassVar[dict[str, str]] = {
+        "==": "eq",
+        "!=": "ne",
+        ">": "gt",
+        ">=": "ge",
+        "<": "lt",
+        "<=": "le",
+    }
+    _MAX_LIMIT: ClassVar[int] = 200
+    _MAX_ROUND: ClassVar[int] = 6
 
     def __init__(self, searcher: Searcher):  # noqa: D107
         self.searcher = searcher
         self._last_results: pd.DataFrame | None = None
+        self._document_excluded = False
 
-    def update_results(self, results: pd.DataFrame | None):
-        """Store the latest search results for analysis."""
+    def update_results(
+        self,
+        results: pd.DataFrame | None,
+        *,
+        document_excluded: bool = False,
+    ):
+        """Store the latest search results for analysis.
+
+        Args:
+            results: DataFrame returned by the last search.
+            document_excluded: Whether the search omitted the document text.
+        """
         self._last_results = results
+        self._document_excluded = document_excluded
 
     def execute(self, **kwargs) -> str:
-        """Execute a pandas expression against the last search results.
+        """Execute a statistics operation against the last search results.
 
         Returns:
-            str: The result of the expression as a string.
+            str: JSON-encoded result, or an error message.
         """
         username = kwargs.pop("username", None) or kwargs.pop("user", None)
         if self._last_results is None or self._last_results.empty:
             logger.warning("analyze_results: no results for user=%s", username or "<none>")
             return "No search results available. Run a search first."
 
-        expression = kwargs.get("expression", "")
-        if not expression:
-            logger.warning("analyze_results: no expression for user=%s", username or "<none>")
-            return "No expression provided."
+        error = self._parameter_error(kwargs)
+        if error is not None:
+            logger.warning(
+                "analyze_results rejected: user=%s params=%r error=%s",
+                username or "<none>",
+                kwargs,
+                error,
+            )
+            return error
 
-        logger.info("analyze_results: user=%s expression=%r", username or "<none>", expression)
+        logger.info(
+            "analyze_results: user=%s fn=%r params=%r",
+            username or "<none>",
+            kwargs.get("fn"),
+            kwargs,
+        )
         try:
-            df = self._last_results
-            result = eval(expression, {"df": df, "pd": pd})  # noqa: S307
-            logger.info("analyze_results completed: user=%s result=%r", username or "<none>", str(result)[:200])
-            return str(result)
-        except Exception as e:
-            logger.exception("analyze_results failed: user=%s expression=%r error=%s", username or "<none>", expression, e)  # noqa: TRY401
-            return f"Error evaluating expression: {e}\n\nAvailable columns: {list(self._last_results.columns)}"
+            result = self._stats(self._last_results, kwargs)
+        except AnalysisError as exc:
+            logger.warning(
+                "analyze_results rejected: user=%s params=%r error=%s",
+                username or "<none>",
+                kwargs,
+                exc,
+            )
+            available = ", ".join(str(column) for column in self._last_results.columns)
+            return f"Analysis error: {exc}\n\nAvailable columns: {available}"
+        except Exception as exc:
+            logger.exception(
+                "analyze_results failed: user=%s params=%r",
+                username or "<none>",
+                kwargs,
+            )
+            return f"Analysis failed ({type(exc).__name__}): {exc}"
+
+        return json.dumps(
+            result,
+            indent=2,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+
+    @classmethod
+    def _parameter_error(cls, params: dict[str, Any]) -> str | None:
+        if "expression" in params:
+            return (
+                "The `expression` parameter is no longer supported because it executed "
+                "arbitrary Python. Pass fn, column, and optional by instead."
+            )
+        if "operation" in params or "op" in params:
+            return (
+                "Pass fn, column, by, filters, distinct_by, limit, and round directly; "
+                "the `operation` wrapper was removed."
+            )
+        unexpected = sorted(set(params) - cls._ALLOWED_PARAMS)
+        if unexpected:
+            allowed = ", ".join(sorted(cls._ALLOWED_PARAMS))
+            return f"Unknown parameter(s): {', '.join(unexpected)}. Allowed: {allowed}."
+        return None
+
+    def _stats(
+        self,
+        df: pd.DataFrame,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        fn = self._require_fn(params)
+        by = params.get("by")
+        by = [] if by is None else self._require_columns(df, by)
+        if not by and "limit" in params:
+            raise AnalysisError("`limit` only applies when `by` is provided.")
+
+        filtered = self._dedupe(
+            self._apply_filters(df, params.get("filters")),
+            params.get("distinct_by"),
+        )
+        if fn == "size":
+            if params.get("column") is not None:
+                raise AnalysisError("`column` is not used when fn='size'.")
+            column = None
+        else:
+            column = self._require_column(df, params.get("column"))
+
+        try:
+            if by:
+                return self._group_result(filtered, by, fn, column, params)
+            return self._scalar_result(filtered, fn, column, params)
+        except AnalysisError:
+            raise
+        except (TypeError, ValueError, AttributeError) as exc:
+            label = f" for column '{column}'" if column else ""
+            raise AnalysisError(f"Calculation '{fn}'{label} failed: {exc}") from exc
+
+    def _scalar_result(
+        self,
+        filtered: pd.DataFrame,
+        fn: str,
+        column: str | None,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        value = len(filtered) if fn == "size" else getattr(filtered[column], fn)()
+        return {
+            "fn": fn,
+            "column": column,
+            "value": self._jsonable(self._round(value, params.get("round"))),
+            "matched_rows": len(filtered),
+        }
+
+    def _group_result(
+        self,
+        filtered: pd.DataFrame,
+        by: list[str],
+        fn: str,
+        column: str | None,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        if fn == "size":
+            values = filtered.groupby(by, dropna=True).size()
+        else:
+            values = getattr(filtered.groupby(by, dropna=True)[column], fn)()
+
+        limit = self._get_limit(params)
+        table = values.reset_index(name="value")
+        rows = [
+            {str(key): self._jsonable(value) for key, value in record.items()}
+            for record in table.head(limit).to_dict(orient="records")
+        ]
+        for row in rows:
+            row["value"] = self._jsonable(
+                self._round(row["value"], params.get("round")),
+            )
+
+        return {
+            "by": by,
+            "fn": fn,
+            "column": column,
+            "matched_rows": len(filtered),
+            "groups": len(table),
+            "truncated": len(table) > limit,
+            "rows": rows,
+        }
+
+    def _apply_filters(self, df: pd.DataFrame, filters: Any) -> pd.DataFrame:
+        if filters is None:
+            return df
+        if not isinstance(filters, dict):
+            raise AnalysisError("`filters` must be an object of column -> condition.")
+        for column, condition in filters.items():
+            if column == "document" and "document" not in df.columns:
+                if self._document_excluded:
+                    raise AnalysisError(
+                        "**Cannot filter on `document` because the last search used "
+                        "`exclude_document=true`.** Re-run the search with "
+                        "`exclude_document=false`, then call analyze_results again.",
+                    )
+                raise AnalysisError(
+                    "**Cannot filter on `document` because the last search results "
+                    "do not contain the document text.** Re-run the search with "
+                    "document text included, then call analyze_results again.",
+                )
+            column_name = self._require_column(df, column)
+            if isinstance(condition, dict):
+                if not condition:
+                    raise AnalysisError(f"Filter for '{column}' is empty.")
+                for operator, value in condition.items():
+                    mask = self._filter_mask(
+                        df[column_name],
+                        column_name,
+                        operator,
+                        value,
+                    )
+                    df = df[mask]
+            elif isinstance(condition, list):
+                df = df[df[column_name].isin(condition)]
+            else:
+                df = df[df[column_name] == condition]
+        return df
+
+    def _filter_mask(
+        self,
+        series: pd.Series,
+        column: str,
+        operator: str,
+        value: Any,
+    ) -> pd.Series:
+        comparison = self._COMPARISONS.get(operator)
+        if comparison is not None:
+            try:
+                mask = getattr(series, comparison)(value)
+            except TypeError as exc:
+                raise AnalysisError(
+                    f"Filter '{column} {operator} {value!r}' failed: {exc}",
+                ) from exc
+            return mask.fillna(value=False)
+
+        if operator == "contains":
+            if not isinstance(value, str):
+                raise AnalysisError(
+                    f"Filter op 'contains' requires a string value, got {type(value).__name__}.",
+                )
+            return (
+                series.astype("string")
+                .str.contains(value, case=False, na=False, regex=False)
+                .fillna(value=False)
+            )
+        if operator in {"in", "not_in"}:
+            if not isinstance(value, list):
+                raise AnalysisError(
+                    f"Filter op '{operator}' requires a list value.",
+                )
+            mask = series.isin(value)
+            return ~mask if operator == "not_in" else mask
+
+        raise AnalysisError(
+            f"Unknown filter operator '{operator}'. "
+            "Use ==, !=, >, >=, <, <=, in, not_in, or contains.",
+        )
+
+    def _dedupe(self, df: pd.DataFrame, column: Any) -> pd.DataFrame:
+        if column is None:
+            return df
+        column = self._require_column(df, column)
+        return df.drop_duplicates(subset=[column])
+
+    def _require_fn(self, params: dict[str, Any]) -> str:
+        if "fn" not in params:
+            allowed = ", ".join(sorted(self._AGGREGATIONS))
+            raise AnalysisError(f"`fn` is required. Use one of: {allowed}.")
+        fn = params["fn"]
+        if fn not in self._AGGREGATIONS:
+            allowed = ", ".join(sorted(self._AGGREGATIONS))
+            raise AnalysisError(f"Unknown aggregation '{fn}'. Use one of: {allowed}.")
+        return fn
+
+    @staticmethod
+    def _require_column(df: pd.DataFrame, column: Any) -> str:
+        if not isinstance(column, str) or not column:
+            raise AnalysisError("`column` must be a non-empty string.")
+        if column not in df.columns:
+            available = ", ".join(str(name) for name in df.columns)
+            raise AnalysisError(f"Unknown column '{column}'. Available columns: {available}")
+        return column
+
+    def _require_columns(self, df: pd.DataFrame, columns: Any) -> list[str]:
+        if not isinstance(columns, list) or not columns:
+            raise AnalysisError("`by` must be a non-empty list of column names.")
+        return [self._require_column(df, column) for column in columns]
+
+    def _get_limit(self, params: dict[str, Any]) -> int:
+        value = params.get("limit", 50)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise AnalysisError("`limit` must be a positive integer.")
+        if value > self._MAX_LIMIT:
+            raise AnalysisError(f"`limit` cannot exceed {self._MAX_LIMIT}.")
+        return value
+
+    def _round(self, value: Any, digits: Any) -> Any:
+        if digits is None:
+            return value
+        if (
+            isinstance(digits, bool)
+            or not isinstance(digits, int)
+            or not 0 <= digits <= self._MAX_ROUND
+        ):
+            raise AnalysisError("`round` must be an integer between 0 and 6.")
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError) as exc:
+            raise AnalysisError(
+                f"`round` requires a numeric result, got {type(value).__name__}.",
+            ) from exc
+        return round(numeric, digits)
+
+    @staticmethod
+    def _jsonable(value: Any) -> Any:
+        if value is None or value is pd.NA or value is pd.NaT:
+            return None
+        if isinstance(value, float) and pd.isna(value):
+            return None
+        if isinstance(value, (str, bool, int, float)):
+            return value
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+        if hasattr(value, "item"):
+            return AnalyzeResultsTool._jsonable(value.item())
+        raise AnalysisError(
+            f"Cannot serialize a result value of type {type(value).__name__}.",
+        )
 
 
 class FindRelevantReports(Tool):
