@@ -14,10 +14,34 @@ def test_assistant_initialization(mock_searcher):
         openai_api_key="test",
         openai_endpoint="https://test.openai.azure.com/",
         searcher=mock_searcher,
+        model="test-model",
     )
     assert assistant.openai_client is not None
     assert assistant.searcher == mock_searcher
     assert len(assistant.tools) > 0  # Should have tools
+
+
+def test_assistant_requires_model(mock_searcher, monkeypatch):
+    """Test that Assistant requires OPENAI_MODEL instead of using a default."""
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    with pytest.raises(RuntimeError, match="OPENAI_MODEL"):
+        Assistant(
+            openai_api_key="test",
+            openai_endpoint="https://test.openai.azure.com/",
+            searcher=mock_searcher,
+        )
+
+
+def test_assistant_model_can_be_set_from_env(mock_searcher, monkeypatch):
+    """Test that the model is read from OPENAI_MODEL."""
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna-test")
+    assistant = Assistant(
+        openai_api_key="test",
+        openai_endpoint="https://test.openai.azure.com/",
+        searcher=mock_searcher,
+    )
+    assert assistant.model == "gpt-6-luna-test"
+    assert assistant.tool_map["delegate_analysis"].model == "gpt-6-luna-test"
 
 
 def test_complete_history_initialization():

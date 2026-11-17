@@ -7,7 +7,15 @@ from unittest.mock import Mock
 import pandas as pd
 import pytest
 
-from backend.AssistantTools import AnalyzeResultsTool, SearchTool
+from backend.AssistantTools import AnalyzeResultsTool, SearchTool, SkillsTool
+
+SEARCH = {
+    "query": "",
+    "year_range": [2000, 2026],
+    "document_type": ["section"],
+    "modes": ["0"],
+    "agencies": ["TAIC"],
+}
 
 
 @pytest.fixture
@@ -49,14 +57,18 @@ def analysis_df() -> pd.DataFrame:
 
 @pytest.fixture
 def analyze_tool(analysis_df: pd.DataFrame) -> AnalyzeResultsTool:
-    """Build an AnalyzeResultsTool with the fixture frame loaded.
+    """Build an AnalyzeResultsTool whose embedded search returns fixture rows.
 
     Returns:
-        AnalyzeResultsTool: Tool primed with the fixture results.
+        AnalyzeResultsTool: Tool backed by a mocked searcher.
     """
-    tool = AnalyzeResultsTool(Mock())
-    tool.update_results(analysis_df)
-    return tool
+    searcher = Mock()
+    searcher.knowledge_search.return_value = (
+        analysis_df,
+        {"total_results": len(analysis_df), "relevant_results": len(analysis_df)},
+        {},
+    )
+    return AnalyzeResultsTool(searcher)
 
 
 def _run(tool: AnalyzeResultsTool, params: dict) -> dict:
@@ -65,7 +77,7 @@ def _run(tool: AnalyzeResultsTool, params: dict) -> dict:
     Returns:
         dict: Decoded analysis payload.
     """
-    result = tool.execute(**params)
+    result = tool.execute(search=SEARCH, **params)
     return json.loads(result)
 
 
@@ -227,15 +239,15 @@ def test_analyze_text_contains(analyze_tool: AnalyzeResultsTool):
 
 def test_analyze_deduplicates_reports():
     """Average fatalities counts each report once."""
-    tool = AnalyzeResultsTool(Mock())
-    tool.update_results(
-        pd.DataFrame(
-            {
-                "report_id": ["R1", "R1", "R2"],
-                "fatalities": [2, 2, 0],
-            },
-        ),
+    frame = pd.DataFrame(
+        {
+            "report_id": ["R1", "R1", "R2"],
+            "fatalities": [2, 2, 0],
+        },
     )
+    searcher = Mock()
+    searcher.knowledge_search.return_value = (frame, {"total_results": 3}, {})
+    tool = AnalyzeResultsTool(searcher)
 
     result = _run(
         tool,
@@ -252,13 +264,13 @@ def test_analyze_deduplicates_reports():
 
 def test_analyze_document_excluded_warns():
     """Filtering on an excluded document column gives a loud message."""
-    tool = AnalyzeResultsTool(Mock())
-    tool.update_results(
-        pd.DataFrame({"report_id": ["R1"]}),
-        document_excluded=True,
-    )
+    frame = pd.DataFrame({"report_id": ["R1"], "document": ["text"]})
+    searcher = Mock()
+    searcher.knowledge_search.return_value = (frame, {"total_results": 1}, {})
+    tool = AnalyzeResultsTool(searcher)
 
     result = tool.execute(
+        search={**SEARCH, "exclude_document": True},
         fn="size",
         filters={"document": {"contains": "engine"}},
     )
@@ -267,9 +279,18 @@ def test_analyze_document_excluded_warns():
     assert "exclude_document=true" in result
 
 
+def test_analyze_runs_embedded_search(analyze_tool: AnalyzeResultsTool):
+    """Analysis performs its own search instead of reading global state."""
+    _run(analyze_tool, {"fn": "size"})
+
+    analyze_tool.searcher.knowledge_search.assert_called_once()
+    assert not hasattr(analyze_tool, "_last_results")
+
+
 def test_analyze_rejects_unknown_parameter(analyze_tool: AnalyzeResultsTool):
     """Reject typos instead of silently ignoring them."""
     result = analyze_tool.execute(
+        search=SEARCH,
         fn="mean",
         column="fatalities",
         filter={"agency": "TAIC"},
@@ -280,21 +301,25 @@ def test_analyze_rejects_unknown_parameter(analyze_tool: AnalyzeResultsTool):
 
 def test_analyze_limit_requires_grouping(analyze_tool: AnalyzeResultsTool):
     """Reject limit when there is no group-by instead of ignoring it."""
-    result = analyze_tool.execute(fn="mean", column="fatalities", limit=10)
+    result = analyze_tool.execute(
+        search=SEARCH, fn="mean", column="fatalities", limit=10,
+    )
 
     assert "`limit` only applies when `by` is provided" in result
 
 
 def test_analyze_rejects_column_with_size(analyze_tool: AnalyzeResultsTool):
     """Reject a column when fn=size instead of silently ignoring it."""
-    result = analyze_tool.execute(fn="size", column="report_id")
+    result = analyze_tool.execute(search=SEARCH, fn="size", column="report_id")
 
     assert "`column` is not used when fn='size'" in result
 
 
 def test_analyze_rejects_excessive_limit(analyze_tool: AnalyzeResultsTool):
     """Reject limit values above the cap instead of silently reducing them."""
-    result = analyze_tool.execute(fn="size", by=["agency"], limit=500)
+    result = analyze_tool.execute(
+        search=SEARCH, fn="size", by=["agency"], limit=500,
+    )
 
     assert "`limit` cannot exceed 200" in result
 
@@ -302,6 +327,7 @@ def test_analyze_rejects_excessive_limit(analyze_tool: AnalyzeResultsTool):
 def test_analyze_rejects_unknown_column(analyze_tool: AnalyzeResultsTool):
     """Reject column names that are not part of the search results."""
     result = analyze_tool.execute(
+        search=SEARCH,
         fn="mean",
         column="__import__('os')",
     )
@@ -315,6 +341,23 @@ def test_analyze_rejects_legacy_expression(analyze_tool: AnalyzeResultsTool):
     result = analyze_tool.execute(expression="__import__('os').system('true')")
 
     assert "no longer supported" in result
+
+
+def test_read_skill_confined_to_skills_dir(tmp_path, monkeypatch):
+    """read_skill reads valid skills and rejects path traversal."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    (skills_dir / "good.md").write_text(
+        "---\nname: good\n---\nGOOD CONTENT",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(SkillsTool, "_skills_dir", skills_dir)
+
+    assert SkillsTool.execute(skill_name="good") == "GOOD CONTENT"
+
+    for skill_name in ("../outside", "/etc/passwd", "good.md"):
+        result = SkillsTool.execute(skill_name=skill_name)
+        assert result.startswith("Invalid skill name.")
 
 
 @pytest.mark.skipif(

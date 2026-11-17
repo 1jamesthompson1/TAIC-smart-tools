@@ -9,6 +9,7 @@ Contains three classes:
 import hashlib
 import json
 import logging
+import os
 import time
 from collections.abc import Generator
 from datetime import datetime, timezone
@@ -37,6 +38,28 @@ _SKILLS_HEADER = (
     if _AVAILABLE_SKILLS
     else ""
 )
+
+
+def resolve_model_name(model: str | None = None) -> str:
+    """Resolve the model name to use for assistant requests.
+
+    Args:
+        model: Explicit model name. When omitted, OPENAI_MODEL is used.
+
+    Returns:
+        str: The explicit model or the OPENAI_MODEL environment variable.
+
+    Raises:
+        RuntimeError: If no model is provided and OPENAI_MODEL is not set.
+    """
+    resolved = (model or os.getenv("OPENAI_MODEL", "")).strip()
+    if not resolved:
+        msg = (
+            "OPENAI_MODEL is not set. Configure it in the .env file with the "
+            "model or Azure OpenAI deployment name to use."
+        )
+        raise RuntimeError(msg)
+    return resolved
 
 
 # Reason for noqa:
@@ -536,9 +559,15 @@ class Assistant:
         searcher,
         openai_api_key,
         openai_endpoint=None,
+        model: str | None = None,
     ):
         """Constructor."""
-        logger.info("Creating Chatbot: openai_endpoint=%s", openai_endpoint or "<default>")
+        self.model = resolve_model_name(model)
+        logger.info(
+            "Creating Chatbot: model=%s openai_endpoint=%s",
+            self.model,
+            openai_endpoint or "<default>",
+        )
         self.searcher = searcher
         if openai_endpoint:
             self.openai_client = openai.OpenAI(
@@ -552,7 +581,7 @@ class Assistant:
         self.analyze_tool = AnalyzeResultsTool(searcher)
         self.tools = [
             SkillsTool(),
-            SearchTool(searcher, analyze_tool=self.analyze_tool),
+            SearchTool(searcher),
             ReadReportTool(searcher),
             DocumentationTool(),
             self.analyze_tool,
@@ -560,7 +589,7 @@ class Assistant:
         ]
         self.tool_map = {tool.name: tool for tool in self.tools}
 
-        delegate = DelegateTool(self.openai_client, self.tool_map)
+        delegate = DelegateTool(self.openai_client, self.tool_map, model=self.model)
         self.tools.append(delegate)
         self.tool_map[delegate.name] = delegate
 
@@ -603,7 +632,7 @@ class Assistant:
 
         title = (
             self.openai_client.responses.create(
-                model="gpt-5.6-luna",
+                model=self.model,
                 instructions=AssistantPrompts.conversation_title(),
                 input=f"Here is the last {conversation_context_length} messages from the conversation history: {msg}. Can you please provide a title to help?",
                 store=False,
@@ -792,7 +821,7 @@ class Assistant:
             # STEP 1: Orient and Plan
             # Assistant thinks about the query and plans how to respond
             orient_plan_response = self.openai_client.responses.create(
-                model="gpt-5.6-luna",
+                model=self.model,
                 instructions=orient_plan_system_message,
                 input=history.openai_format(),
                 tools=[tool.to_openai_format() for tool in self.tools],
@@ -814,7 +843,7 @@ class Assistant:
             # STEP 2: Act on the Plan
             # Assistant executes the plan (may call tools or provide final response)
             act_response = self.openai_client.responses.create(
-                model="gpt-5.6-luna",
+                model=self.model,
                 instructions=act_system_message,
                 input=history.openai_format(),
                 tools=[tool.to_openai_format() for tool in self.tools],

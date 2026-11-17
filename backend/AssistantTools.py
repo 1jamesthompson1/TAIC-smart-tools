@@ -2,9 +2,11 @@
 
 import json
 import logging
+import re
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from copy import deepcopy
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
@@ -70,6 +72,52 @@ class Tool(ABC):
             "description": self.description,
             "parameters": self.parameters,
         }
+
+
+def _normalise_search_args(search_args: dict[str, Any]) -> dict[str, Any]:
+    """Normalise shared search arguments.
+
+    Args:
+        search_args: Raw search parameters.
+
+    Returns:
+        dict[str, Any]: Parameters with a sensible search_type default.
+    """
+    args = dict(search_args)
+    query = args.get("query") or ""
+    args["query"] = query
+    if not query:
+        args["search_type"] = None
+    elif args.get("search_type") not in {"fts", "vector"}:
+        args["search_type"] = "fts"
+    return args
+
+
+def _execute_search(
+    searcher: Searcher,
+    search_args: dict[str, Any],
+    *,
+    limit: int,
+    username: str | None,
+) -> tuple[SearchParams, pd.DataFrame, dict]:
+    """Run a knowledge search using shared argument normalisation.
+
+    Args:
+        searcher: Searcher instance.
+        search_args: Raw search parameters.
+        limit: Maximum number of rows.
+        username: User for log correlation.
+
+    Returns:
+        tuple: Parsed SearchParams, result DataFrame, and info dict.
+    """
+    params = SearchParams(**_normalise_search_args(search_args))
+    results, info, _plots = searcher.knowledge_search(
+        params,
+        limit=limit,
+        username=username,
+    )
+    return params, results, info
 
 
 class SearchTool(Tool):
@@ -200,12 +248,9 @@ search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recomm
         ],
     }
 
-    def __init__(
-        self, searcher: Searcher, analyze_tool: "AnalyzeResultsTool | None" = None,
-    ):
+    def __init__(self, searcher: Searcher):
         """Constructor."""
         self.searcher = searcher
-        self.analyze_tool = analyze_tool
 
     def execute(self, **kwargs) -> str:
         """Execute a search against the knowledge base.
@@ -218,15 +263,11 @@ search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recomm
         # Username for log correlation (if propagated from app/Assistant)
         username = kwargs.pop("username", None) or kwargs.pop("user", None)
 
-        # Ensure search_type has a default for filter-only searches
-        if "search_type" not in kwargs or kwargs["search_type"] is None:
-            kwargs.setdefault("search_type", None)
-
-        search_params = SearchParams(**kwargs)
         tool_start = time.perf_counter()
         try:
-            results, info, _plots = self.searcher.knowledge_search(
-                search_params,
+            search_params, results, info = _execute_search(
+                self.searcher,
+                kwargs,
                 limit=limit,
                 username=username,
             )
@@ -239,15 +280,6 @@ search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recomm
                     f"Vector embedding via Azure AI likely hung. Error: {e}"
                 )
             return f"Search failed after {elapsed:.1f}s: {e}"
-
-        analysis_results = results
-        if exclude_document and "document" in analysis_results.columns:
-            analysis_results = analysis_results.drop(columns=["document"])
-        if self.analyze_tool is not None:
-            self.analyze_tool.update_results(
-                analysis_results,
-                document_excluded=exclude_document,
-            )
 
         summary = f"**Search results:** {info.get('relevant_results', len(results))} relevant out of {len(results)} total"
         if info.get("info_message"):
@@ -334,13 +366,30 @@ class AnalysisError(ValueError):
     """Raised when an analysis operation is invalid or cannot be completed."""
 
 
+# Reuse the search tool's schema rather than maintaining a duplicate copy.
+ANALYZE_SEARCH_PARAMETERS = deepcopy(SearchTool._tool_parameters)  # noqa: SLF001
+ANALYZE_SEARCH_PARAMETERS["description"] = (
+    "Search parameters. Same fields as the search tool. The search runs inside "
+    "this call."
+)
+ANALYZE_SEARCH_PARAMETERS["properties"]["limit"]["description"] = (
+    "Maximum search rows to retrieve. Default 500."
+)
+ANALYZE_SEARCH_PARAMETERS["properties"]["exclude_document"]["description"] = (
+    "Drop the document column before analysis. Default false."
+)
+
+
 class AnalyzeResultsTool(Tool):
     """Tool for running simple statistics on the last search results."""
 
     _tool_name = "analyze_results"
-    _tool_description = """Calculate simple statistics on the last search results.
+    _tool_description = """Run a search and calculate simple statistics on its results in one call.
 
-Pass `fn` and `column` (except for fn="size"), plus optional `by` to group the results.
+Pass the same `search` object you would pass to the search tool, plus `fn` and
+`column` (except for fn="size"). The search is executed internally, so no prior
+search is required. Repeating a search is fine; it keeps tool state independent.
+
 If `by` is omitted you get one number; if `by` is provided you get one row per group.
 
 `fn` is one of: size, count, nunique, sum, mean, median, min, max, std. `size` counts rows and needs no column.
@@ -363,6 +412,7 @@ Examples:
     _tool_parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
+            "search": ANALYZE_SEARCH_PARAMETERS,
             "fn": {
                 "type": "string",
                 "enum": [
@@ -404,7 +454,7 @@ Examples:
                 "description": "Round numeric results to this many decimal places (0-6).",
             },
         },
-        "required": ["fn"],
+        "required": ["search", "fn"],
     }
 
     _ALLOWED_PARAMS: ClassVar[set[str]] = {
@@ -440,34 +490,15 @@ Examples:
 
     def __init__(self, searcher: Searcher):  # noqa: D107
         self.searcher = searcher
-        self._last_results: pd.DataFrame | None = None
-        self._document_excluded = False
 
-    def update_results(
-        self,
-        results: pd.DataFrame | None,
-        *,
-        document_excluded: bool = False,
-    ):
-        """Store the latest search results for analysis.
-
-        Args:
-            results: DataFrame returned by the last search.
-            document_excluded: Whether the search omitted the document text.
-        """
-        self._last_results = results
-        self._document_excluded = document_excluded
-
-    def execute(self, **kwargs) -> str:
-        """Execute a statistics operation against the last search results.
+    def execute(self, **kwargs) -> str:  # noqa: PLR0911
+        """Run an embedded search and calculate statistics over its results.
 
         Returns:
             str: JSON-encoded result, or an error message.
         """
         username = kwargs.pop("username", None) or kwargs.pop("user", None)
-        if self._last_results is None or self._last_results.empty:
-            logger.warning("analyze_results: no results for user=%s", username or "<none>")
-            return "No search results available. Run a search first."
+        search = kwargs.pop("search", None)
 
         error = self._parameter_error(kwargs)
         if error is not None:
@@ -479,14 +510,54 @@ Examples:
             )
             return error
 
+        if not isinstance(search, dict):
+            return (
+                "A `search` object is required. Pass the same search parameters "
+                "you would use with the search tool."
+            )
+
+        search_args = dict(search)
+        limit = search_args.pop("limit", 500)
+        exclude_document = bool(search_args.pop("exclude_document", False))
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            return "`search.limit` must be a positive integer."
+        limit = min(limit, 5000)
+
+        try:
+            search_params, results, info = _execute_search(
+                self.searcher,
+                search_args,
+                limit=limit,
+                username=username,
+            )
+        except Exception as exc:
+            logger.exception(
+                "analyze_results search failed: user=%s search=%r",
+                username or "<none>",
+                search_args,
+            )
+            return f"Search failed: {type(exc).__name__}: {exc}"
+
+        if results.empty:
+            logger.info("analyze_results: empty search user=%s", username or "<none>")
+            return "No search results matched the embedded search."
+
+        if exclude_document and "document" in results.columns:
+            results = results.drop(columns=["document"])
+
         logger.info(
-            "analyze_results: user=%s fn=%r params=%r",
+            "analyze_results: user=%s fn=%r search=%r params=%r",
             username or "<none>",
             kwargs.get("fn"),
+            search_args,
             kwargs,
         )
         try:
-            result = self._stats(self._last_results, kwargs)
+            result = self._stats(
+                results,
+                kwargs,
+                document_excluded=exclude_document,
+            )
         except AnalysisError as exc:
             logger.warning(
                 "analyze_results rejected: user=%s params=%r error=%s",
@@ -494,7 +565,7 @@ Examples:
                 kwargs,
                 exc,
             )
-            available = ", ".join(str(column) for column in self._last_results.columns)
+            available = ", ".join(str(column) for column in results.columns)
             return f"Analysis error: {exc}\n\nAvailable columns: {available}"
         except Exception as exc:
             logger.exception(
@@ -504,6 +575,11 @@ Examples:
             )
             return f"Analysis failed ({type(exc).__name__}): {exc}"
 
+        result["search"] = {
+            "query": search_params.query,
+            "total_results": info.get("total_results", len(results)),
+            "relevant_results": info.get("relevant_results", len(results)),
+        }
         return json.dumps(
             result,
             indent=2,
@@ -533,6 +609,8 @@ Examples:
         self,
         df: pd.DataFrame,
         params: dict[str, Any],
+        *,
+        document_excluded: bool,
     ) -> dict[str, Any]:
         fn = self._require_fn(params)
         by = params.get("by")
@@ -541,7 +619,11 @@ Examples:
             raise AnalysisError("`limit` only applies when `by` is provided.")
 
         filtered = self._dedupe(
-            self._apply_filters(df, params.get("filters")),
+            self._apply_filters(
+                df,
+                params.get("filters"),
+                document_excluded=document_excluded,
+            ),
             params.get("distinct_by"),
         )
         if fn == "size":
@@ -610,14 +692,20 @@ Examples:
             "rows": rows,
         }
 
-    def _apply_filters(self, df: pd.DataFrame, filters: Any) -> pd.DataFrame:
+    def _apply_filters(
+        self,
+        df: pd.DataFrame,
+        filters: Any,
+        *,
+        document_excluded: bool,
+    ) -> pd.DataFrame:
         if filters is None:
             return df
         if not isinstance(filters, dict):
             raise AnalysisError("`filters` must be an object of column -> condition.")
         for column, condition in filters.items():
             if column == "document" and "document" not in df.columns:
-                if self._document_excluded:
+                if document_excluded:
                     raise AnalysisError(
                         "**Cannot filter on `document` because the last search used "
                         "`exclude_document=true`.** Re-run the search with "
@@ -955,6 +1043,9 @@ Call with a skill name (e.g. 'finding-previous-occurrences') to get the complete
     }
 
     _skills_dir: ClassVar[Path] = Path(__file__).parent.parent / "skills"
+    _skill_name_pattern: ClassVar[re.Pattern[str]] = re.compile(
+        r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
+    )
 
     @classmethod
     def get_available_skills_markdown(cls) -> str:
@@ -1000,6 +1091,72 @@ Call with a skill name (e.g. 'finding-previous-occurrences') to get the complete
         return content
 
     @classmethod
+    def _resolve_skill_path(cls, skill_name: str) -> Path | None:
+        """Resolve a skill name to a file inside the skills directory.
+
+        Args:
+            skill_name: User/model-supplied skill name.
+
+        Returns:
+            Path | None: Safe resolved path, or None if invalid/outside.
+        """
+        if not isinstance(skill_name, str):
+            return None
+
+        skill_name = skill_name.strip()
+        if not cls._skill_name_pattern.fullmatch(skill_name):
+            return None
+
+        skills_dir = cls._skills_dir.resolve()
+        candidate = cls._skills_dir / f"{skill_name}.md"
+        if candidate.is_symlink():
+            return None
+
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(skills_dir)
+        except ValueError:
+            return None
+
+        return resolved if resolved.is_file() else None
+
+    @classmethod
+    def _find_by_frontmatter(cls, skill_name: str) -> str | None:
+        """Find a skill by its frontmatter name inside the skills directory.
+
+        Args:
+            skill_name: Validated skill name.
+
+        Returns:
+            str | None: Skill body, or None when no safe match exists.
+        """
+        skills_dir = cls._skills_dir.resolve()
+        for skill_file in sorted(cls._skills_dir.glob("*.md")):
+            if skill_file.is_symlink():
+                continue
+            resolved = skill_file.resolve()
+            try:
+                resolved.relative_to(skills_dir)
+            except ValueError:
+                continue
+            if not resolved.is_file():
+                continue
+
+            content = resolved.read_text(encoding="utf-8")
+            if not content.startswith("---"):
+                continue
+            parts = content.split("---", 2)
+            if len(parts) < 3:  # noqa: PLR2004
+                continue
+            if any(
+                line.strip() == f"name: {skill_name}"
+                for line in parts[1].strip().split("\n")
+            ):
+                body = cls._strip_frontmatter(content)
+                return body or content
+        return None
+
+    @classmethod
     def execute(cls, **kwargs) -> str:
         """Execute the skills tool.
 
@@ -1009,18 +1166,17 @@ Call with a skill name (e.g. 'finding-previous-occurrences') to get the complete
         skill_name = kwargs.get("skill_name", "")
         if not skill_name:
             return "Please provide a skill_name parameter."
+        if not isinstance(skill_name, str) or not cls._skill_name_pattern.fullmatch(
+            skill_name.strip(),
+        ):
+            return "Invalid skill name. Use a name like 'finding-previous-occurrences'."
 
-        skill_path = cls._skills_dir / f"{skill_name}.md"
-        if not skill_path.exists():
-            # Try matching by frontmatter name
-            for skill_file in cls._skills_dir.glob("*.md"):
-                content = skill_file.read_text(encoding="utf-8")
-                if content.startswith("---"):
-                    parts = content.split("---", 2)
-                    if len(parts) >= 3 and f"name: {skill_name}" in parts[1]:  # noqa: PLR2004
-                        body = cls._strip_frontmatter(content)
-                        return body or content
-
+        skill_name = skill_name.strip()
+        skill_path = cls._resolve_skill_path(skill_name)
+        if skill_path is None:
+            content = cls._find_by_frontmatter(skill_name)
+            if content is not None:
+                return content
             return f"Skill '{skill_name}' not found."
 
         content = skill_path.read_text(encoding="utf-8")
@@ -1080,9 +1236,10 @@ Examples:
         "required": ["tool_calls", "instruction"],
     }
 
-    def __init__(self, client, tool_map):  # noqa: D107
+    def __init__(self, client, tool_map, model):  # noqa: D107
         self.client = client
         self.tool_map = tool_map
+        self.model = model
 
     def execute(self, **kwargs) -> str:
         """Execute tool calls and send results to a fresh LLM for analysis.
@@ -1100,7 +1257,7 @@ Examples:
 
         def run_tool(i, tc):
             tool_name = tc.get("name", "")
-            tool_args = tc.get("arguments", {})
+            tool_args = dict(tc.get("arguments", {}))
             tool = self.tool_map.get(tool_name)
             if not tool:
                 output = f"Error: Unknown tool '{tool_name}'"
@@ -1123,7 +1280,7 @@ Examples:
 Provide a concise, well-structured analysis. Focus on extracting key findings, patterns, and insights."""
 
         response = self.client.responses.create(
-            model="gpt-5.6-luna",
+            model=self.model,
             instructions=system_prompt,
             input=f"## Tool Results\n\n{combined_data}\n\n## Instructions\n\n{instruction}",
             store=False,
