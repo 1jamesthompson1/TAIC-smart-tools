@@ -14,11 +14,79 @@ import pandas as pd
 import plotly.io
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.data.tables import TableClient
+from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 
 logger = logging.getLogger(__name__)
 
 from . import Searching, Version  # noqa: E402
+
+
+def warn_if_shared_key_configured() -> None:
+    """Warn when obsolete shared-key storage settings are still present."""
+    if os.getenv("AZURE_STORAGE_ACCOUNT_KEY") or os.getenv(
+        "AZURE_STORAGE_CONNECTION_STRING",
+    ):
+        logger.warning(
+            "AZURE_STORAGE_ACCOUNT_KEY/AZURE_STORAGE_CONNECTION_STRING are "
+            "ignored: Azure Storage now requires managed identity / Microsoft "
+            "Entra authentication. Remove these settings.",
+        )
+
+
+def get_storage_account_name() -> str:
+    """Return the configured Azure Storage account name.
+
+    Returns:
+        str: Storage account name.
+
+    Raises:
+        ValueError: If AZURE_STORAGE_ACCOUNT_NAME is missing.
+    """
+    account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
+    if not account_name:
+        msg = "AZURE_STORAGE_ACCOUNT_NAME must be set"
+        raise ValueError(msg)
+    return account_name
+
+
+def get_storage_credential() -> DefaultAzureCredential:
+    """Return a non-interactive Azure credential for managed-identity auth.
+
+    Returns:
+        DefaultAzureCredential: Credential for Azure Storage data-plane access.
+    """
+    return DefaultAzureCredential(exclude_interactive_browser_credential=True)
+
+
+def get_table_endpoint() -> str:
+    """Return the Azure Table endpoint for the configured account.
+
+    Returns:
+        str: Table service endpoint.
+    """
+    return f"https://{get_storage_account_name()}.table.core.windows.net"
+
+
+def get_blob_endpoint() -> str:
+    """Return the Azure Blob endpoint for the configured account.
+
+    Returns:
+        str: Blob service endpoint.
+    """
+    return f"https://{get_storage_account_name()}.blob.core.windows.net"
+
+
+def build_blob_service_client() -> BlobServiceClient:
+    """Build a BlobServiceClient using Microsoft Entra / managed identity.
+
+    Returns:
+        BlobServiceClient: Configured Blob service client.
+    """
+    return BlobServiceClient(
+        account_url=get_blob_endpoint(),
+        credential=get_storage_credential(),
+    )
 
 
 class BaseBlobStore(ABC):
@@ -27,47 +95,23 @@ class BaseBlobStore(ABC):
     Provides common functionality for storing and retrieving JSON data as blobs.
     """
 
-    def __init__(self, connection_string: str, container_name: str):
+    def __init__(
+        self,
+        blob_service_client: BlobServiceClient,
+        container_name: str,
+    ):
         """Initialize the Blob Storage client.
 
         Args:
-            connection_string: Azure Storage connection string
+            blob_service_client: Authenticated BlobServiceClient using Microsoft
+                Entra / managed identity.
             container_name: Name of the container to store blobs
         """
-        self.connection_string = connection_string or self._get_connection_string()
         self.container_name = container_name
-
-        # Initialize Blob client
-        self.blob_client = BlobServiceClient.from_connection_string(
-            self.connection_string,
-        )
+        self.blob_client = blob_service_client
 
         # Create container if it doesn't exist
         self._setup_container()
-
-    @staticmethod
-    def _get_connection_string() -> str:
-        """Build connection string from environment variables.
-
-        Uses the same storage account as your existing Table Storage.
-        Loads account details from environment.
-
-        Returns:
-            str: Connection string.
-
-        Raises:
-            ValueError: When missing account_name or account_key
-        """
-        account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
-        account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY")
-
-        if not account_name or not account_key:
-            msg = "AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY must be set"
-            raise ValueError(
-                msg,
-            )
-
-        return f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
 
     def _setup_container(self):
         """Create blob container if it doesn't exist."""

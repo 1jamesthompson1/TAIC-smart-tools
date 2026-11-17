@@ -15,6 +15,7 @@ dependencies = [
     "fastapi[standard]>=0.162.5,<0.163",
     "starlette[full]>=1.7.0,<2.0",
     "azure-data-tables>=12.6.0,<13",
+    "azure-identity>=1.19.0,<2",
     "pydantic>=2.10.6,<3",
     "plotly>=6.0.1,<7",
     "openpyxl>=3.1.5,<4",

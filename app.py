@@ -52,15 +52,68 @@ logging.getLogger("backend.Searching").setLevel(logging.INFO)
 logging.getLogger("backend.AssistantTools").setLevel(logging.INFO)
 logging.getLogger("backend.Assistant").setLevel(logging.INFO)
 
-dotenv.load_dotenv(override=True)
+# Never let a local .env override configuration injected by the platform.
+dotenv.load_dotenv(override=False)
 _log = logging.getLogger(__name__)
+
+DEV_MODE_BANNER = """
+<div style="background:#fef3c7;border:1px solid #f59e0b;color:#78350f;
+            padding:6px 10px;border-radius:6px;font-weight:600;text-align:center;">
+  DEV MODE — authentication and logging may be disabled. Do not use in production.
+</div>
+"""
+
+
+def is_dev_mode() -> bool:
+    """Return whether the DEV=true switch is enabled.
+
+    Returns:
+        bool: True only when DEV=true.
+    """
+    return os.getenv("DEV", "false").strip().lower() == "true"
+
+
+def validate_runtime_config() -> None:
+    """Refuse development-only switches unless DEV=true.
+
+    Raises:
+        RuntimeError: If NO_LOGIN or NO_LOGS is enabled without DEV=true.
+    """
+    if is_dev_mode():
+        _log.warning(
+            "DEV=true: development mode enabled (NO_LOGIN/NO_LOGS may be active). "
+            "Never use this in production.",
+        )
+        return
+
+    enabled = [
+        name
+        for name in ("NO_LOGIN", "NO_LOGS")
+        if os.getenv(name, "false").strip().lower() == "true"
+    ]
+    if enabled:
+        msg = (
+            f"{', '.join(enabled)} can only be enabled when DEV=true. "
+            "Refusing to start with development features enabled."
+        )
+        raise RuntimeError(msg)
+
+
+validate_runtime_config()
 
 static_path = Path(__file__).parent / "static"
 
-# Setup the storage connection
-_log.info("[bold green]✓ Initializing Azure Storage connection[/bold green]")
-connection_string = f"AccountName={os.getenv('AZURE_STORAGE_ACCOUNT_NAME')};AccountKey={os.getenv('AZURE_STORAGE_ACCOUNT_KEY')};EndpointSuffix=core.windows.net"
-client = TableServiceClient.from_connection_string(conn_str=connection_string)
+# Azure Storage is Microsoft Entra / managed-identity only. Shared-key and
+# connection-string authentication is intentionally not supported.
+Storage.warn_if_shared_key_configured()
+_log.info(
+    "[bold green]✓ Initializing Azure Storage connection (managed identity)[/bold green]",
+)
+client = TableServiceClient(
+    endpoint=Storage.get_table_endpoint(),
+    credential=Storage.get_storage_credential(),
+)
+blob_target = Storage.build_blob_service_client()
 knowledgesearchlogs_table_name = os.getenv("KNOWLEDGE_SEARCH_LOGS_TABLE_NAME")
 conversation_metadata_table_name = os.getenv("CONVERSATION_METADATA_TABLE_NAME")
 conversation_container_name = os.getenv("CONVERSATION_CONTAINER_NAME")
@@ -99,11 +152,11 @@ chatlogs = client.create_table_if_not_exists(
 
 # Initialize Blob Storage clients
 conversation_blob_store = Storage.ConversationBlobStore(
-    connection_string,
+    blob_target,
     conversation_container_name,
 )
 knowledge_search_blob_store = Storage.KnowledgeSearchBlobStore(
-    connection_string,
+    blob_target,
     knowledge_search_container_name,
 )
 
@@ -169,7 +222,14 @@ def get_user(request: Request):
     Raises:
         HTTPException: If user is not authenticated (redirects to login).
     """
-    if os.getenv("NO_LOGIN", "false").lower() == "true":
+    if os.getenv("NO_LOGIN", "false").strip().lower() == "true":
+        # Startup validation already enforces this, but keep a request-time
+        # guard so a misconfigured deployment cannot silently disable auth.
+        if not is_dev_mode():
+            raise HTTPException(
+                status_code=500,
+                detail="NO_LOGIN requires DEV=true",
+            )
         dev_username = os.getenv("DEV_USERNAME", "devuser")
         # Try to ensure session user is available for code paths that read it
         request.session["user"] = {"name": dev_username}
@@ -527,6 +587,7 @@ searching_instance = Searching.Searcher(
 assistant_instance = Assistant.Assistant(
     openai_api_key=os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"),
     openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+    model=os.getenv("OPENAI_MODEL"),
     searcher=searching_instance,
 )
 
@@ -1098,6 +1159,9 @@ with gr.Blocks(  # noqa: PLR1702
     fill_height=True,
     fill_width=True,
 ) as smart_tools:
+    if is_dev_mode():
+        gr.HTML(DEV_MODE_BANNER, padding=False)
+
     username = gr.State()
     smart_tools.load(get_user_name, inputs=None, outputs=username)
 
@@ -1631,6 +1695,8 @@ with gr.Blocks(
     fill_height=True,
 ) as login_page:
     with gr.Column(elem_classes="complete-center"):
+        if is_dev_mode():
+            gr.HTML(DEV_MODE_BANNER, padding=False)
         gr.Markdown("# TAIC smart tools")
         gr.Markdown(f"**App version:** {Version.get_display_version()}")
         gr.Markdown("Please login to continue:")

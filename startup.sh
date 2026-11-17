@@ -19,18 +19,18 @@ if [ -d "/app/vectordb/all_document_types.lance" ] && [ "$(ls -A /app/vectordb/a
     echo "Vector database already exists, skipping download..."
 else
     echo "Vector database not found, downloading..."
-    
-    # Check if SAS_TOKEN environment variable is set
-    if [ -z "$SAS_TOKEN" ]; then
-        echo "Error: SAS_TOKEN environment variable is not set."
-        echo "Please set the SAS_TOKEN environment variable with a valid SAS token for the Azure Blob Storage."
-        exit 1
-    fi
-    
-    # Download the vector database using azcopy
-    echo "Downloading vector database using azcopy..."
-    azcopy cp "https://taicdocumentsearcherdata.blob.core.windows.net/vectordb/prod/*?${SAS_TOKEN}" /app/vectordb --recursive
-    
+
+    # Microsoft Entra / managed identity only: no SAS token or account key.
+    echo "Downloading vector database using managed identity..."
+    azcopy login --identity
+    ACCOUNT_NAME="${AZURE_STORAGE_ACCOUNT_NAME:-taicdocumentsearcherdata}"
+    # VECTORDB_DOWNLOAD_PATH may include the container name, e.g.
+    # "vectordb/archive/2026-07-25_17-50-08_prod". Default to the live prod prefix.
+    VECTORDB_SOURCE="${VECTORDB_DOWNLOAD_PATH:-vectordb/prod}"
+    VECTORDB_SOURCE="${VECTORDB_SOURCE#/}"
+    VECTORDB_SOURCE="${VECTORDB_SOURCE#vectordb/}"
+    azcopy cp "https://${ACCOUNT_NAME}.blob.core.windows.net/vectordb/${VECTORDB_SOURCE}/*" /app/vectordb --recursive
+
     echo "Vector database download completed!"
 fi
 

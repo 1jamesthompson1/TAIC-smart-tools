@@ -8,15 +8,16 @@ import dotenv
 import pytest
 from fastapi.testclient import TestClient
 
-from app import app as fastapi_app
-from backend import Searching
-from backend.Assistant import Assistant
-
-dotenv.load_dotenv()  # Load environment variables from .env file if present
-
-# Always set this to true
+# Configure the test environment before importing app.py: the app refuses
+# development-only switches unless DEV=true.
+os.environ.setdefault("DEV", "true")
 os.environ["NO_LOGIN"] = "false"
-os.environ["NO_LOGS"] = "false"  # Ensure logging is enabled for tests
+os.environ["NO_LOGS"] = "false"
+dotenv.load_dotenv(override=False)  # Load .env only for values not already set
+
+from app import app as fastapi_app  # noqa: E402
+from backend import Searching  # noqa: E402
+from backend.Assistant import Assistant  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -214,12 +215,14 @@ def mock_assistant(mock_searcher, use_real_services):
         assistant = Assistant(
             openai_api_key=os.getenv("AZURE_OPENAI_API_KEY"),
             openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+            model=os.getenv("OPENAI_MODEL"),
             searcher=mock_searcher,
         )
     else:
         assistant = Assistant(
             openai_api_key="test",
             openai_endpoint="https://test.openai.azure.com/",
+            model="test-model",
             searcher=mock_searcher,
         )
     return assistant

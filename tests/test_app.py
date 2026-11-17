@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 import gradio as gr
 import pandas as pd
 import pytest
+from azure.identity import DefaultAzureCredential
 
 from app import (
     assistant_instance,
@@ -18,7 +19,9 @@ from app import (
     handle_example_select,
     load_conversation,
     perform_search,
+    validate_runtime_config,
 )
+from backend import Storage
 from backend.Assistant import CompleteHistory
 
 
@@ -63,6 +66,15 @@ class TestAppSmoke:
 
             assert "Assistant" in response.text
 
+    @staticmethod
+    def test_dev_banner_visible(client):
+        """Test that DEV=true is visible in the UI."""
+        with patch("app.get_user") as mock_get_user:
+            mock_get_user.return_value = "testuser"
+            response = client.get("/tools")
+
+            assert "DEV MODE" in response.text
+
     @pytest.mark.skipif(
         not os.getenv("TEST_USE_REAL_SERVICES"),
         reason="Requires real services",
@@ -73,6 +85,34 @@ class TestAppSmoke:
         response = client.get("/login-page")
         assert response.status_code == self.SUCCESS_STATUS
         assert "TAIC smart tools" in response.text
+
+
+class TestSecurityConfig:
+    """Tests for the DEV switch and storage authentication."""
+
+    @staticmethod
+    def test_dev_required_for_dev_switches(monkeypatch):
+        """NO_LOGIN and NO_LOGS must fail closed unless DEV=true."""
+        monkeypatch.delenv("DEV", raising=False)
+        monkeypatch.setenv("NO_LOGIN", "true")
+        monkeypatch.setenv("NO_LOGS", "true")
+
+        with pytest.raises(RuntimeError, match="DEV=true"):
+            validate_runtime_config()
+
+    @staticmethod
+    def test_dev_allows_dev_switches(monkeypatch):
+        """DEV=true permits NO_LOGIN and NO_LOGS for local development."""
+        monkeypatch.setenv("DEV", "true")
+        monkeypatch.setenv("NO_LOGIN", "true")
+        monkeypatch.setenv("NO_LOGS", "true")
+
+        validate_runtime_config()
+
+    @staticmethod
+    def test_storage_uses_entra_credential():
+        """Storage authentication is Microsoft Entra / managed identity only."""
+        assert isinstance(Storage.get_storage_credential(), DefaultAzureCredential)
 
 
 class TestToolsFunctions:

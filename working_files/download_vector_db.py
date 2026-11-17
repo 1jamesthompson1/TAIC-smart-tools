@@ -87,6 +87,9 @@ def main():
         "rl",
         "--expiry",
         expiry,
+        "--as-user",
+        "--auth-mode",
+        "login",
         "--output",
         "tsv",
     ]
@@ -103,7 +106,7 @@ def main():
 
     blob_url = f"https://{args.account_name}.blob.core.windows.net/{args.container_name}/{args.blob_path}?{sas_token}"
 
-    logger.debug("Blob URL with SAS token:\n%(url)s", extra={"url": blob_url})
+    logger.debug("Blob URL with SAS token: <redacted>")
 
     azcopy_cmd = [
         "azcopy",

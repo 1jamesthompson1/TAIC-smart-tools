@@ -76,6 +76,31 @@ cp .env.example .env
 # Edit .env with your Azure credentials and API keys
 ```
 
+**Storage authentication and secrets**
+
+Production deployments must use Microsoft Entra managed identity for Azure
+Storage. Assign the application identity:
+
+- `Storage Blob Data Contributor` on the storage account (conversation/search blobs)
+- `Storage Table Data Contributor` on the storage account (metadata tables)
+
+Storage authentication is Microsoft Entra / managed identity only. Shared-key
+and connection-string authentication are not supported. Do not put
+`AZURE_STORAGE_ACCOUNT_KEY` or `AZURE_STORAGE_CONNECTION_STRING` in the
+environment.
+
+For local development, run `az login`; `DefaultAzureCredential` uses your Azure
+CLI identity. Set `DEV=true` in `.env` only to show the DEV banner and permit
+`NO_LOGIN=true` / `NO_LOGS=true`. **Never set `DEV=true` in production.**
+Without `DEV=true`, `NO_LOGIN` and `NO_LOGS` are refused at startup.
+
+For automated environments without a managed identity (for example CI), use a
+service principal with federated credentials/OIDC or the standard
+`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, and `AZURE_CLIENT_SECRET` variables
+accepted by `DefaultAzureCredential`. Never copy `.env` into a container image:
+`.dockerignore` excludes it, and the Docker build fails if `.env` or `.git` is
+present.
+
 4. **Run the app locally**
 
 ```bash

@@ -1,0 +1,34 @@
+# Never copy secrets or local environment files into the image.
+.env
+.env.*
+*.env
+
+# VCS metadata, security reports, and local caches
+.git
+.gitignore
+.github
+.vscode
+.idea
+.pre-commit-config.yaml
+Dockerfile
+.dockerignore
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+coverage.xml
+
+# Local data and notebooks are not needed at runtime.
+vectordb
+workbench
+working_files
+tests
+site
+*.ipynb
+
+# OS noise
+.DS_Store
+Thumbs.db
