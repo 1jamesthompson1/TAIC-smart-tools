@@ -585,7 +585,6 @@ searching_instance = Searching.Searcher(
 )
 
 assistant_instance = Assistant.Assistant(
-    openai_api_key=os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"),
     openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
     model=os.getenv("OPENAI_MODEL"),
     searcher=searching_instance,
@@ -1030,8 +1029,8 @@ def perform_search(  # noqa: PLR0913, PLR0917
         # Provide more actionable message for timeouts (likely vector embedding hang)
         if error_info.get("error_type") == "TimeoutError":
             msg = (
-                "Vector search timed out — the embedding service (Azure AI) did not respond in time. "
-                "This usually means the Azure endpoint is slow or unreachable.\n"
+                "Vector search timed out — the embedding service (Azure OpenAI) did not respond in time. "
+                "This usually means the Azure OpenAI endpoint is slow or unreachable.\n"
                 f"Details: {error_info['error']}\n"
                 f"Query: {query!r}\n"
                 "Try again with a shorter query, use FTS (wrap query in quotes), or contact support with the query and time. "

@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import warnings
 from unittest.mock import Mock, patch
 
 import dotenv
@@ -14,6 +15,26 @@ os.environ.setdefault("DEV", "true")
 os.environ["NO_LOGIN"] = "false"
 os.environ["NO_LOGS"] = "false"
 dotenv.load_dotenv(override=False)  # Load .env only for values not already set
+
+# The test environment must point at test-only storage. Warn loudly if the
+# configured containers/tables are not prefixed with "test": app.py performs
+# real storage I/O at import, so a production configuration would let the test
+# run read or write production data.
+for _var in (
+    "CONVERSATION_CONTAINER_NAME",
+    "KNOWLEDGE_SEARCH_CONTAINER_NAME",
+    "CONVERSATION_METADATA_TABLE_NAME",
+    "KNOWLEDGE_SEARCH_LOGS_TABLE_NAME",
+):
+    _value = os.getenv(_var)
+    if _value and not _value.lower().startswith("test"):
+        warnings.warn(
+            f"{_var}={_value!r} does not start with 'test'. Tests perform real "
+            "storage operations and may read or write production data. Point "
+            "the test environment at test-prefixed containers/tables.",
+            UserWarning,
+            stacklevel=1,
+        )
 
 from app import app as fastapi_app  # noqa: E402
 from backend import Searching  # noqa: E402
@@ -59,7 +80,6 @@ def mock_env_vars(use_real_services):
         "CLIENT_ID": os.getenv("CLIENT_ID", "testclient"),
         "CLIENT_SECRET": os.getenv("CLIENT_SECRET", "testsecret"),
         "TENANT_ID": os.getenv("TENANT_ID", "testtenant"),
-        "AZURE_OPENAI_API_KEY": os.getenv("AZURE_OPENAI_API_KEY", "testkey"),
         "AZURE_OPENAI_ENDPOINT": os.getenv(
             "AZURE_OPENAI_ENDPOINT",
             "https://test.openai.azure.com/",
@@ -166,7 +186,7 @@ def mock_openai(use_real_services):
         # Use real OpenAI client with env vars
         yield None
     else:
-        with patch("openai.AzureOpenAI") as mock_openai_class:
+        with patch("openai.OpenAI") as mock_openai_class:
             mock_client = Mock()
             mock_response = Mock()
             mock_response.choices = [Mock()]
@@ -213,14 +233,12 @@ def mock_assistant(mock_searcher, use_real_services):
     """
     if use_real_services:
         assistant = Assistant(
-            openai_api_key=os.getenv("AZURE_OPENAI_API_KEY"),
             openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
             model=os.getenv("OPENAI_MODEL"),
             searcher=mock_searcher,
         )
     else:
         assistant = Assistant(
-            openai_api_key="test",
             openai_endpoint="https://test.openai.azure.com/",
             model="test-model",
             searcher=mock_searcher,

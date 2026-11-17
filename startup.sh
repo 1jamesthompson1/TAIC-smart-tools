@@ -21,8 +21,14 @@ else
     echo "Vector database not found, downloading..."
 
     # Microsoft Entra / managed identity only: no SAS token or account key.
+    # AZURE_CLIENT_ID selects a user-assigned identity (for example the
+    # dev/beta test identity). Without it, azcopy uses the system-assigned one.
     echo "Downloading vector database using managed identity..."
-    azcopy login --identity
+    if [ -n "${AZURE_CLIENT_ID:-}" ]; then
+        azcopy login --identity --identity-client-id "${AZURE_CLIENT_ID}"
+    else
+        azcopy login --identity
+    fi
     ACCOUNT_NAME="${AZURE_STORAGE_ACCOUNT_NAME:-taicdocumentsearcherdata}"
     # VECTORDB_DOWNLOAD_PATH may include the container name, e.g.
     # "vectordb/archive/2026-07-25_17-50-08_prod". Default to the live prod prefix.

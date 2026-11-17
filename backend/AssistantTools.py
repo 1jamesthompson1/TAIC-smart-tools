@@ -381,7 +381,7 @@ ANALYZE_SEARCH_PARAMETERS["properties"]["exclude_document"]["description"] = (
 
 
 class AnalyzeResultsTool(Tool):
-    """Tool for running simple statistics on the last search results."""
+    """Tool for running simple statistics on an embedded search."""
 
     _tool_name = "analyze_results"
     _tool_description = """Run a search and calculate simple statistics on its results in one call.
@@ -707,12 +707,12 @@ Examples:
             if column == "document" and "document" not in df.columns:
                 if document_excluded:
                     raise AnalysisError(
-                        "**Cannot filter on `document` because the last search used "
+                        "**Cannot filter on `document` because this search used "
                         "`exclude_document=true`.** Re-run the search with "
                         "`exclude_document=false`, then call analyze_results again.",
                     )
                 raise AnalysisError(
-                    "**Cannot filter on `document` because the last search results "
+                    "**Cannot filter on `document` because these search results "
                     "do not contain the document text.** Re-run the search with "
                     "document text included, then call analyze_results again.",
                 )

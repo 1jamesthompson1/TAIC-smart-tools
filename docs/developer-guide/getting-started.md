@@ -61,27 +61,9 @@ uv run python working_files/download_vector_db.py
 cp .env.example .env
 
 # Edit .env with your credentials
-nano .env
 ```
 
-Required environment variables:
-
-- `DEV`: `true` locally; unset/false in production. Enables `NO_LOGIN`,
-  `NO_LOGS`, and a visible DEV banner.
-- `AZURE_STORAGE_ACCOUNT_NAME`: Azure Storage account name
-- `AZURE_OPENAI_API_KEY`: OpenAI API key
-- `AZURE_OPENAI_ENDPOINT`: OpenAI endpoint URL
-- OAuth configuration for authentication
-
-Azure Storage is Microsoft Entra / managed identity only; shared-key and
-connection-string authentication are not supported. Production must use a
-managed identity with `Storage Blob Data Contributor` and `Storage Table Data
-Contributor` on the storage account. Locally, `az login` lets
-`DefaultAzureCredential` use your CLI identity. For CI, use OIDC/federated
-credentials or the standard `AZURE_TENANT_ID`/`AZURE_CLIENT_ID`/
-`AZURE_CLIENT_SECRET` service-principal variables. `NO_LOGIN=true` and
-`NO_LOGS=true` are refused unless `DEV=true`; never set `DEV=true` in
-production.
+You then need to login to Azure CLI with `az login` and ensure you have appropriate access to the resources needed.
 
 ### 6. Run the Application
 

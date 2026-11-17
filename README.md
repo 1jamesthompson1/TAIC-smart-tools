@@ -76,30 +76,7 @@ cp .env.example .env
 # Edit .env with your Azure credentials and API keys
 ```
 
-**Storage authentication and secrets**
-
-Production deployments must use Microsoft Entra managed identity for Azure
-Storage. Assign the application identity:
-
-- `Storage Blob Data Contributor` on the storage account (conversation/search blobs)
-- `Storage Table Data Contributor` on the storage account (metadata tables)
-
-Storage authentication is Microsoft Entra / managed identity only. Shared-key
-and connection-string authentication are not supported. Do not put
-`AZURE_STORAGE_ACCOUNT_KEY` or `AZURE_STORAGE_CONNECTION_STRING` in the
-environment.
-
-For local development, run `az login`; `DefaultAzureCredential` uses your Azure
-CLI identity. Set `DEV=true` in `.env` only to show the DEV banner and permit
-`NO_LOGIN=true` / `NO_LOGS=true`. **Never set `DEV=true` in production.**
-Without `DEV=true`, `NO_LOGIN` and `NO_LOGS` are refused at startup.
-
-For automated environments without a managed identity (for example CI), use a
-service principal with federated credentials/OIDC or the standard
-`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, and `AZURE_CLIENT_SECRET` variables
-accepted by `DefaultAzureCredential`. Never copy `.env` into a container image:
-`.dockerignore` excludes it, and the Docker build fails if `.env` or `.git` is
-present.
+Login to Azure CLI with `az login` and ensure you have appropriate access to the resources needed.
 
 4. **Run the app locally**
 
@@ -140,15 +117,29 @@ PR titles should include one of the following keywords to indicate the type of v
 
 ### CI/CD Configuration
 
-This project uses GitHub Actions for automated testing and deployment. The following secrets need to be configured in your GitHub repository:
+This project uses GitHub Actions for automated testing. Storage access uses
+OpenID Connect (OIDC) federation to the user-assigned
+`id-taicsmarttools-test` managed identity; no storage key or SAS token is used
+by CI.
 
 #### Required GitHub Secrets
 
-| Secret Name | Description |
-|-------------|-------------|
-| `AZURE_STORAGE_SAS_TOKEN` | Azure storage account SAS token to allow reading of the `envs` container |
-| `AZURE_STORAGE_ACCOUNT_NAME` | Azure Storage account name where test config is stored |
+The github secretes are required to give access to a managed identity that allwos for storage access and AI use as well as some other config.
 
-#### Test Environment Setup
-
-The CI pipeline automatically downloads a test configuration file (`test.env` saved as `.env`) from Azure Blob Storage during test runs. This file should contain all necessary environment variables for testing with real services. This setup is to reduce the coupling between the code repository and the TAIC internal deployment.
+| Secret | Description |
+|--------|-------------|
+| `AZURE_TEST_CLIENT_ID` | Client ID of the `id-taicsmarttools-test` user-assigned managed identity |
+| `AZURE_TENANT_ID` | Microsoft Entra tenant ID for OIDC |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
+| `AZURE_STORAGE_ACCOUNT_NAME` | Storage account containing the test resources |
+| `CONVERSATION_CONTAINER_NAME` | `test-smartassistantconversations` |
+| `KNOWLEDGE_SEARCH_CONTAINER_NAME` | `test-knowledgesearchresults` |
+| `CONVERSATION_METADATA_TABLE_NAME` | `testsmartassistantconversationsmetadata` |
+| `KNOWLEDGE_SEARCH_LOGS_TABLE_NAME` | `testknowledgesearches` |
+| `VECTORDB_PATH` | `az://vectordb/prod` (read via the Azure CLI OIDC session) |
+| `VECTORDB_TABLE_NAME` | `all_document_types` |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint, including `/openai/v1/` |
+| `OPENAI_MODEL` | Model/deployment used by the tests |
+| `CLIENT_ID` | OAuth test client ID (placeholder is fine) |
+| `CLIENT_SECRET` | OAuth test client secret (placeholder is fine) |
+| `TENANT_ID` | OAuth test tenant ID (placeholder is fine) |

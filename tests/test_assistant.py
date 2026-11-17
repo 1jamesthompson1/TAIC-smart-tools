@@ -11,7 +11,6 @@ from backend.Assistant import Assistant, CompleteHistory
 def test_assistant_initialization(mock_searcher):
     """Test that Assistant can be initialized."""
     assistant = Assistant(
-        openai_api_key="test",
         openai_endpoint="https://test.openai.azure.com/",
         searcher=mock_searcher,
         model="test-model",
@@ -26,7 +25,6 @@ def test_assistant_requires_model(mock_searcher, monkeypatch):
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     with pytest.raises(RuntimeError, match="OPENAI_MODEL"):
         Assistant(
-            openai_api_key="test",
             openai_endpoint="https://test.openai.azure.com/",
             searcher=mock_searcher,
         )
@@ -36,7 +34,6 @@ def test_assistant_model_can_be_set_from_env(mock_searcher, monkeypatch):
     """Test that the model is read from OPENAI_MODEL."""
     monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna-test")
     assistant = Assistant(
-        openai_api_key="test",
         openai_endpoint="https://test.openai.azure.com/",
         searcher=mock_searcher,
     )
@@ -216,7 +213,11 @@ def test_real_conversation_processing(mock_assistant):
 def test_basic_tool_use(mock_assistant):
     """Test basic tool usage."""
     history = CompleteHistory([])
-    history.add_message("user", "Can you tell me about recent ATSB investigations?")
+    history.add_message(
+        "user",
+        "Use the search tool with query 'ATSB investigation' and list the top "
+        "report IDs. You must call the tool.",
+    )
 
     # Process the input (this will make real API calls)
     results = list(mock_assistant.process_input(history))
@@ -226,9 +227,15 @@ def test_basic_tool_use(mock_assistant):
     assert len(final_history) > 1  # Should have user message + assistant response
     assert len(gradio_format) > 1
     # Check that a function call was made
-    function_calls = [
-        msg for msg in final_history if msg["ai"].get("type") == "function_call"
-    ]
+    function_calls = []
+    for message in final_history:
+        ai_items = message["ai"]
+        if isinstance(ai_items, list):
+            function_calls.extend(
+                item for item in ai_items if item.get("type") == "function_call"
+            )
+        elif ai_items.get("type") == "function_call":
+            function_calls.append(ai_items)
     assert len(function_calls) > 0
 
 

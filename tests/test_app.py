@@ -13,6 +13,7 @@ from azure.identity import DefaultAzureCredential
 
 from app import (
     assistant_instance,
+    conversation_store,
     create_or_update_conversation,
     delete_conversation,
     get_user_conversations_metadata,
@@ -245,17 +246,28 @@ class TestConversationFunctions:
     )
     @staticmethod
     def test_load_conversation_function():
-        """Test loading conversations a real conversation."""
-        conversation_id = "1f6ebb26-abc4-4d7f-ab0b-da07c34ca73e"
+        """Test loading a real conversation."""
+        conversation_id = str(uuid.uuid4())
+        history = CompleteHistory([])
+        history.add_message("user", "Test load")
+        history.add_message("assistant", "Test response")
 
-        history, _gradio_format, _conv_id, _title, _btn = load_conversation(
+        create_or_update_conversation(
+            Mock(username="testuser"),
+            conversation_id=conversation_id,
+            history=history,
+            conversation_title="Test Conversation",
+        )
+
+        loaded_history, _gradio_format, _conv_id, _title, _btn = load_conversation(
             Mock(username="testuser"),
             conversation_id,
         )
 
-        assert isinstance(history, list)
+        assert isinstance(loaded_history, list)
+        assert len(loaded_history) > 0
 
-        assert len(history) > 0
+        conversation_store.delete_conversation("testuser", conversation_id)
 
     @pytest.mark.skipif(
         not os.getenv("TEST_USE_REAL_SERVICES"),

@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 import openai
 from rich import print as rich_print
 
+from .AzureAuth import get_openai_client
+
 logger = logging.getLogger(__name__)
 
 from .AssistantTools import (  # noqa: E402
@@ -557,25 +559,18 @@ class Assistant:
     def __init__(
         self,
         searcher,
-        openai_api_key,
         openai_endpoint=None,
         model: str | None = None,
     ):
         """Constructor."""
         self.model = resolve_model_name(model)
         logger.info(
-            "Creating Chatbot: model=%s openai_endpoint=%s",
+            "Creating Chatbot: model=%s openai_endpoint=%s auth=managed-identity",
             self.model,
             openai_endpoint or "<default>",
         )
         self.searcher = searcher
-        if openai_endpoint:
-            self.openai_client = openai.OpenAI(
-                api_key=openai_api_key,
-                base_url=openai_endpoint,
-            )
-        else:
-            self.openai_client = openai.OpenAI(api_key=openai_api_key)
+        self.openai_client = get_openai_client(openai_endpoint)
 
         # Initialize tools
         self.analyze_tool = AnalyzeResultsTool(searcher)
@@ -697,7 +692,7 @@ class Assistant:
                 elapsed = time.perf_counter() - tool_start
                 logger.exception("Tool %s failed user=%s query=%r", tool_name, username or "<none>", tool_args.get("query", ""))
                 if isinstance(e, TimeoutError):
-                    result = f"Tool {tool_name} timed out after {elapsed:.1f}s: {e}. Check Azure AI embedding service."
+                    result = f"Tool {tool_name} timed out after {elapsed:.1f}s: {e}. Check Azure OpenAI embedding service."
                 else:
                     result = f"Error executing {tool_name}: {e}"
 

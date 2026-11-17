@@ -194,7 +194,7 @@ class TestSearching:
         end_time = time.time()
 
         runtime = end_time - start_time
-        expected_runtime = 30  # seconds
+        expected_runtime = 60  # seconds; remote Azure vector DBs are slower
         assert runtime < expected_runtime, f"Search took too long: {runtime} seconds"
 
     @pytest.mark.skipif(

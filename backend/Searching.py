@@ -20,13 +20,14 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import plotly.express as px  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
-from azure.ai.inference import EmbeddingsClient  # noqa: E402
-from azure.core.credentials import AzureKeyCredential  # noqa: E402
+from azure.identity import DefaultAzureCredential  # noqa: E402
 from lancedb.embeddings.base import TextEmbeddingFunction  # noqa: E402
 from lancedb.embeddings.registry import register  # noqa: E402
 from lancedb.embeddings.utils import TEXT  # noqa: E402
 from rich import print as rich_print  # noqa: E402
 from rich import table  # noqa: E402
+
+from .AzureAuth import get_openai_client  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +35,12 @@ logger = logging.getLogger(__name__)
 # This has to be added in manually unless https://github.com/lancedb/lancedb/issues/2518 is resolved
 @register("azure-ai-text")
 class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
-    """An embedding function that uses the AzureAI API.
+    """An embedding function that uses the Azure OpenAI API.
 
-    https://learn.microsoft.com/en-us/python/api/overview/azure/ai-inference-readme?view=azure-python-preview
+    https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/embeddings
 
-    - AZURE_AI_ENDPOINT: The endpoint URL for the AzureAI service.
-    - AZURE_AI_API_KEY: The API key for the AzureAI service.
+    - AZURE_OPENAI_ENDPOINT: The Azure OpenAI endpoint (including /openai/v1/).
+    - Authentication uses the application's Microsoft Entra identity.
 
     Attributes:
         name: The name of the model you want to use from the model catalog.
@@ -169,7 +170,7 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
         embeddings = []
         total_batches = (len(texts) + batch_size - 1) // batch_size
         embed_timeout = int(os.getenv("EMBED_TIMEOUT_SECONDS", "30"))
-        input_type = kwargs.get("input_type", "document")
+        input_type = kwargs.pop("input_type", "document")
         active_user = _current_user.get()
         user_suffix = f" user={active_user}" if active_user else ""
         overall_start = time.perf_counter()
@@ -191,7 +192,7 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
                 # doesn't block the whole search forever.
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(
-                        AzureAITextEmbeddingFunction.client.embed,
+                        AzureAITextEmbeddingFunction.client.embeddings.create,
                         input=batch,
                         model=self.name,
                         dimensions=self.ndims(),
@@ -201,19 +202,19 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
             except FutureTimeoutError:
                 elapsed = time.perf_counter() - batch_start
                 logger.exception("Embedding batch %d/%d TIMEOUT after %.2fs (timeout=%ds model=%s%s). "
-                    "Azure endpoint: %s — check AZURE_AI_ENDPOINT / network / API key.",
+                    "Azure endpoint: %s — check AZURE_OPENAI_ENDPOINT / network / managed identity role.",
                     batch_idx,
                     total_batches,
                     elapsed,
                     embed_timeout,
                     self.name,
                     user_suffix,
-                    os.getenv("AZURE_AI_ENDPOINT", "<not set>"),
+                    os.getenv("AZURE_OPENAI_ENDPOINT", "<not set>"),
                     )
                 msg = (
                     f"Embedding request timed out after {embed_timeout}s "
                     f"(batch {batch_idx}/{total_batches}, model={self.name}). "
-                    "This usually means the Azure AI endpoint is unreachable or slow."
+                    "This usually means the Azure OpenAI endpoint is unreachable or slow."
                 )
                 raise TimeoutError(msg) from None
             except Exception:
@@ -242,33 +243,24 @@ class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
     @staticmethod
     def _init_client():
         if AzureAITextEmbeddingFunction.client is None:
-            endpoint = os.getenv("AZURE_AI_ENDPOINT")
-            api_key_present = bool(os.getenv("AZURE_AI_API_KEY"))
+            endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
             logger.debug(
-                "Initializing AzureAI EmbeddingsClient: endpoint=%s api_key_present=%s model_init_pending",
+                "Initializing OpenAI embeddings client: endpoint=%s auth=managed-identity",
                 endpoint or "<not set>",
-                api_key_present,
             )
-            if os.environ.get("AZURE_AI_API_KEY") is None:
-                logger.exception("AZURE_AI_API_KEY not found in environment variables")  # noqa: LOG004
-                msg = "AZURE_AI_API_KEY not found in environment variables"
-                raise ValueError(msg)
-            if os.environ.get("AZURE_AI_ENDPOINT") is None:
-                logger.error("AZURE_AI_ENDPOINT not found in environment variables")
-                msg = "AZURE_AI_ENDPOINT not found in environment variables"
+            if not endpoint:
+                logger.error("AZURE_OPENAI_ENDPOINT not found in environment variables")
+                msg = "AZURE_OPENAI_ENDPOINT not found in environment variables"
                 raise ValueError(msg)
 
             try:
-                AzureAITextEmbeddingFunction.client = EmbeddingsClient(
-                    endpoint=os.environ["AZURE_AI_ENDPOINT"],
-                    credential=AzureKeyCredential(os.environ["AZURE_AI_API_KEY"]),
-                )
+                AzureAITextEmbeddingFunction.client = get_openai_client(endpoint)
                 logger.debug(
-                    "AzureAI EmbeddingsClient initialized successfully: endpoint=%s",
-                    os.environ["AZURE_AI_ENDPOINT"],
+                    "OpenAI embeddings client initialized successfully: endpoint=%s",
+                    endpoint,
                 )
             except Exception:
-                logger.error("Failed to initialize AzureAI EmbeddingsClient")  # noqa: TRY400
+                logger.error("Failed to initialize OpenAI embeddings client")  # noqa: TRY400
                 raise
 
 
@@ -317,7 +309,25 @@ class Searcher:
             ValueError: If fails to open table.
         """
         logger.info("Creating Searcher: db_uri=%s table=%s", db_uri, table_name)
-        self.vector_db = lancedb.connect(db_uri)
+        connect_kwargs = {}
+        if str(db_uri).startswith("az://"):
+            account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
+            if not account_name:
+                msg = "AZURE_STORAGE_ACCOUNT_NAME is required for az:// vector DB URIs"
+                raise ValueError(msg)
+            # Pass an explicit bearer token: LanceDB otherwise reads
+            # CLIENT_ID / CLIENT_SECRET / TENANT_ID (the app's OAuth settings)
+            # as an Azure service principal. The token is short-lived; this is
+            # intended for CI where the vector DB is read remotely.
+            storage_token = DefaultAzureCredential(
+                exclude_interactive_browser_credential=True,
+            ).get_token("https://storage.azure.com/.default").token
+            connect_kwargs["storage_options"] = {
+                "bearer_token": storage_token,
+                "account_name": account_name,
+            }
+            logger.info("LanceDB Azure URI: using Microsoft Entra token")
+        self.vector_db = lancedb.connect(db_uri, **connect_kwargs)
         logger.info("LanceDB connected: uri=%s tables=%s", db_uri, self.vector_db.table_names())
         try:
             self.all_document_types_table = self.vector_db.open_table(table_name)

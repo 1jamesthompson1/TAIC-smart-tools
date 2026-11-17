@@ -22,7 +22,26 @@ jobs:
         version: 0.15.21
 
   test:
+    # Fork PRs cannot request the OIDC token and must not receive the test
+    # identity. The lint job still runs for them.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    env:
+      # azure/login logs in the Azure CLI, so make DefaultAzureCredential use
+      # that session instead of probing for a managed identity endpoint.
+      AZURE_TOKEN_CREDENTIALS: AzureCliCredential
+      OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      CONVERSATION_CONTAINER_NAME: ${{ secrets.CONVERSATION_CONTAINER_NAME }}
+      KNOWLEDGE_SEARCH_CONTAINER_NAME: ${{ secrets.KNOWLEDGE_SEARCH_CONTAINER_NAME }}
+      CONVERSATION_METADATA_TABLE_NAME: ${{ secrets.CONVERSATION_METADATA_TABLE_NAME }}
+      KNOWLEDGE_SEARCH_LOGS_TABLE_NAME: ${{ secrets.KNOWLEDGE_SEARCH_LOGS_TABLE_NAME }}
+      VECTORDB_PATH: ${{ secrets.VECTORDB_PATH }}
+      VECTORDB_TABLE_NAME: ${{ secrets.VECTORDB_TABLE_NAME }}
+      CLIENT_ID: ${{ secrets.CLIENT_ID }}
+      CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+      TENANT_ID: ${{ secrets.TENANT_ID }}
 
     steps:
     - uses: actions/checkout@v4
@@ -35,9 +54,12 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v3
 
-    - name: Download test environment file
-      run: |
-        curl -o .env "${{ secrets.TEST_ENV_URL }}"
+    - name: Azure login (OIDC, test managed identity)
+      uses: azure/login@v3
+      with:
+        client-id: ${{ secrets.AZURE_TEST_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
     - name: Install dependencies
       run: uv sync --dev
