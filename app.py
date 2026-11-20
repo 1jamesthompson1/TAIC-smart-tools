@@ -1216,7 +1216,8 @@ with gr.Blocks(  # noqa: PLR1702
                 show_label=False,
                 submit_btn="Send",
                 render=False,
-                lines=3,
+                # lines=1 makes Enter submit; Shift+Enter still adds a newline.
+                lines=1,
             )
             new_conversation_button = gr.Button(
                 "New conversation",

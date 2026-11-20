@@ -32,6 +32,21 @@ from .AzureAuth import get_openai_client  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
+def _sql_string(value: str) -> str:
+    """Quote a value as a SQL string literal.
+
+    LanceDB/DataFusion treats double-quoted values as column identifiers, so
+    string literals must use single quotes with internal quotes escaped.
+
+    Parameters:
+        value: Value to quote.
+
+    Returns:
+        str: SQL string literal, including surrounding single quotes.
+    """
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 # This has to be added in manually unless https://github.com/lancedb/lancedb/issues/2518 is resolved
 @register("azure-ai-text")
 class AzureAITextEmbeddingFunction(TextEmbeddingFunction):
@@ -328,7 +343,11 @@ class Searcher:
             }
             logger.info("LanceDB Azure URI: using Microsoft Entra token")
         self.vector_db = lancedb.connect(db_uri, **connect_kwargs)
-        logger.info("LanceDB connected: uri=%s tables=%s", db_uri, self.vector_db.table_names())
+        logger.info(
+            "LanceDB connected: uri=%s tables=%s",
+            db_uri,
+            self.vector_db.list_tables().tables,
+        )
         try:
             self.all_document_types_table = self.vector_db.open_table(table_name)
             logger.info("Opened table '%s' successfully", table_name)
@@ -336,7 +355,7 @@ class Searcher:
             logger.exception("Error opening table '%s': %s. Available tables: %s",
                 table_name,
                 e,  # noqa: TRY401
-                self.vector_db.table_names(),
+                self.vector_db.list_tables().tables,
                 )
             raise
 
@@ -425,7 +444,9 @@ class Searcher:
                 f"year >= {int(year_range[0])} and year <= {int(year_range[1])}",
             )
         if document_type:
-            document_types = ", ".join(f'"{dt}"' for dt in document_type)
+            # Single quotes are required: newer LanceDB/DataFusion versions
+            # treat double-quoted values as column identifiers.
+            document_types = ", ".join(_sql_string(dt) for dt in document_type)
             where_statement.append(f"document_type in ({document_types})")
         if modes and len(modes) > 1:
             where_statement.append(f"mode in {tuple(str(mode) for mode in modes)}")
@@ -438,7 +459,7 @@ class Searcher:
         if location:
             where_statement.append(f"location like '%{location}%'")
         if occurrence_type and len(occurrence_type) > 1:
-            ot_list = ", ".join(f'"{ot}"' for ot in occurrence_type)
+            ot_list = ", ".join(_sql_string(ot) for ot in occurrence_type)
             where_statement.append(f"occurrence_type in ({ot_list})")
         elif occurrence_type and len(occurrence_type) == 1:
             where_statement.append(f"occurrence_type = '{occurrence_type[0]}'")
