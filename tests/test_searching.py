@@ -3,6 +3,7 @@
 import os
 import time
 
+import lancedb
 import pandas as pd
 import pytest
 
@@ -220,3 +221,83 @@ class TestSearching:
         assert isinstance(results, pd.DataFrame)
         assert len(results) <= self.DEFAULT_SEARCH_LIMIT * 100
         assert isinstance(info, dict)
+
+
+class TestWhereStatement:
+    """Regression tests for LanceDB WHERE clause generation."""
+
+    @staticmethod
+    def _build_where(**overrides) -> str:
+        """Build a WHERE clause with the filters from the failing production query.
+
+        Returns:
+            str: The generated LanceDB WHERE clause.
+        """
+        params = {
+            "year_range": (2020, 2025),
+            "document_type": [],
+            "modes": [],
+            "agencies": [],
+        }
+        params.update(overrides)
+        return Searcher._Searcher__get_where_statement(**params)  # noqa: SLF001
+
+    @staticmethod
+    def _make_table(tmp_path):
+        """Create a small local LanceDB table for filter execution tests.
+
+        Returns:
+            lancedb.table.Table: Table containing one row per document type.
+        """
+        db = lancedb.connect(tmp_path / "where-test")
+        return db.create_table(
+            "documents",
+            data=[
+                {
+                    "year": 2021,
+                    "document_type": "safety_issue",
+                    "mode": "0",
+                    "agency": "TAIC",
+                    "occurrence_type": "collision",
+                },
+                {
+                    "year": 2022,
+                    "document_type": "recommendation",
+                    "mode": "1",
+                    "agency": "ATSB",
+                    "occurrence_type": "fire",
+                },
+                {
+                    "year": 2024,
+                    "document_type": "summary",
+                    "mode": "0",
+                    "agency": "TAIC",
+                    "occurrence_type": "pilot's error",
+                },
+            ],
+        )
+
+    def test_document_type_values_execute_as_string_literals(self, tmp_path):
+        """Double-quoted values are parsed as columns by LanceDB/DataFusion."""
+        where = self._build_where(
+            document_type=["safety_issue", "recommendation"],
+            modes=["0"],
+            agencies=["TAIC", "ATSB"],
+        )
+        assert "document_type in ('safety_issue', 'recommendation')" in where
+        assert '"safety_issue"' not in where
+
+        table = self._make_table(tmp_path)
+        results = table.search(None).where(where, prefilter=True).limit(10).to_pandas()
+
+        assert results["document_type"].tolist() == ["safety_issue"]
+
+    def test_single_quotes_in_values_are_escaped(self, tmp_path):
+        """Values containing apostrophes remain valid SQL literals."""
+        where = self._build_where(occurrence_type=["pilot's error"])
+        assert "occurrence_type = 'pilot''s error'" in where
+
+        table = self._make_table(tmp_path)
+        results = table.search(None).where(where, prefilter=True).limit(10).to_pandas()
+
+        assert results["occurrence_type"].tolist() == ["pilot's error"]

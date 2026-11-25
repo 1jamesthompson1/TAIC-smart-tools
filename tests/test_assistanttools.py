@@ -343,6 +343,102 @@ def test_analyze_rejects_legacy_expression(analyze_tool: AnalyzeResultsTool):
     assert "no longer supported" in result
 
 
+def _search_results_frame() -> pd.DataFrame:
+    """Build a minimal search-results frame.
+
+    Returns:
+        pd.DataFrame: One safety-issue row.
+    """
+    return pd.DataFrame(
+        {
+            "document": ["supervision issue"],
+            "document_id": ["d1"],
+            "report_id": ["R1"],
+            "agency_id": ["A1"],
+            "year": [2020],
+            "mode": ["0"],
+            "agency": ["TAIC"],
+            "document_type": ["safety_issue"],
+            "url": [None],
+        },
+    )
+
+
+def _search_tool() -> SearchTool:
+    """Build a SearchTool backed by a mocked searcher.
+
+    Returns:
+        SearchTool: Tool that always returns one safety-issue row.
+    """
+    searcher = Mock()
+    searcher.knowledge_search.return_value = (
+        _search_results_frame(),
+        {"total_results": 1, "relevant_results": 1},
+        {},
+    )
+    return SearchTool(searcher)
+
+
+@pytest.mark.parametrize(
+    ("query", "limit", "document_expected"),
+    [
+        ("", 150, False),
+        ("supervision", 150, True),
+        ("supervision", 500, False),
+    ],
+)
+def test_search_defaults_exclude_document_for_broad_queries(
+    query: str,
+    limit: int,
+    document_expected: bool,  # noqa: FBT001
+):
+    """Broad searches omit document text by default; narrow queries keep it."""
+    result = _search_tool().execute(
+        query=query,
+        limit=limit,
+        year_range=(2015, 2026),
+        document_type=["safety_issue"],
+        modes=["0"],
+        agencies=["TAIC"],
+    )
+
+    assert ("supervision issue" in result) is document_expected
+
+
+def test_search_explicit_exclude_document_override():
+    """An explicit exclude_document=false keeps document text for broad searches."""
+    result = _search_tool().execute(
+        query="supervision",
+        limit=500,
+        exclude_document=False,
+        year_range=(2015, 2026),
+        document_type=["safety_issue"],
+        modes=["0"],
+        agencies=["TAIC"],
+    )
+
+    assert "supervision issue" in result
+    assert "document column excluded" not in result
+
+
+def test_search_failure_reports_original_error():
+    """A failing search must not mask the cause with UnboundLocalError."""
+    searcher = Mock()
+    searcher.knowledge_search.side_effect = ValueError(
+        "No field named safety_issue",
+    )
+    result = SearchTool(searcher).execute(
+        query="",
+        year_range=(2020, 2025),
+        document_type=["safety_issue"],
+        modes=["0"],
+        agencies=["TAIC"],
+    )
+
+    assert result.startswith("Search failed after")
+    assert "No field named safety_issue" in result
+
+
 def test_read_skill_confined_to_skills_dir(tmp_path, monkeypatch):
     """read_skill reads valid skills and rejects path traversal."""
     skills_dir = tmp_path / "skills"

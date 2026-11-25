@@ -86,9 +86,11 @@ graph LR
 - Testing: pytest with mocks and real services  
 - Auto-versioning: Updates version on merge to main  
 
-**Required secrets:**  
-- `AZURE_STORAGE_SAS_TOKEN` - Access to test config  
-- `AZURE_STORAGE_ACCOUNT_NAME` - Storage account name  
+**Required GitHub secrets:**  
+All test configuration is stored as repository secrets and injected into the
+CI job. Authentication uses OIDC to the `id-taicsmarttools-test` identity, so
+there is no `.env` download and no storage or model key. See the Required
+GitHub Secrets table in the README for the full list.
 
 ## Testing a Deployment Before Merging (TAIC specific)
 
@@ -100,10 +102,10 @@ You can deploy any branch to any slot before merging. The available slots are
 az pipelines run --name "sync"
 
 # Deploy the current branch to the dev slot
-az pipelines run --name "deploy" --variables run-branch="$(git branch --show-current)" slot-name=dev --open
+az pipelines run --name "deploy" --variables run-branch="$(git branch --show-current)" slot-name=dev
 
 # Deploy the current branch to the beta slot
-az pipelines run --name "deploy" --variables run-branch="$(git branch --show-current)" slot-name=beta --open
+az pipelines run --name "deploy" --variables run-branch="$(git branch --show-current)" slot-name=beta
 ```
 
 **What version is shown on the login page and home page:**

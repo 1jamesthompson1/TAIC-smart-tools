@@ -1199,7 +1199,7 @@ with gr.Blocks(  # noqa: PLR1702
                 render=False,
                 examples=[
                     {
-                        "text": "Find all safety issues about inadequate supervision across all agencies and modes since 2015. How many does each agency have?",
+                        "text": "How many safety issues since 2015 mention 'supervision'? Count distinct safety issues and break the result down by agency and mode.",
                     },
                     {
                         "text": "Search for helicopter accidents mentioning engine failure in the last 10 years. How many unique reports, and what were the most common occurrence types?",

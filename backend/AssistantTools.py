@@ -124,6 +124,7 @@ class SearchTool(Tool):
     """Tool for searching the knowledge base."""
 
     _tool_name = "search"
+    _BROAD_SEARCH_LIMIT = 200
     _tool_description = """Search the all_document_types table (~145k rows) containing safety issues, recommendations, report sections, and summaries from TAIC, ATSB, and TSB.
 Use query="" (empty string) for filter-only searches — this returns all results matching the filters without a text relevance ranking.
 Document types:
@@ -137,7 +138,9 @@ Document types:
 
 For more quantitative analysis you might find that the analyze_results tool or the search_report_text tool are more useful. Particularly for metadata filtering (i.e counts of occurrences by aircraft types etc) using the search_report_text tool would be better.
 
-To reduce context overhead when you only need metadata/counts/IDs (not the document text), set exclude_document=true. This omits the large 'document' column from results so you can retrieve many more rows within the context window.
+For counts, totals, or breakdowns, use `analyze_results` rather than retrieving rows and tallying them yourself. `search` results are a relevance-ranked sample, not a census.
+
+Context management: broad searches (empty query or limit >= 200) default to `exclude_document=true`, so only metadata and IDs are returned. Set `exclude_document=false` only when you need the document text. If you need to analyse more than about 100 matching documents, use `delegate_analysis` with this search as one of its tool calls instead of pulling all documents into the conversation.
 
 Examples:
 # Filter-only: find all helicopter safety issues since 2020
@@ -235,8 +238,7 @@ search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recomm
             },
             "exclude_document": {
                 "type": "boolean",
-                "description": "If true, exclude the large 'document' text column from results to reduce context overhead. Useful for filter-only / metadata exploration where you only need counts, IDs, or other columns. Default false (document included).",
-                "default": False,
+                "description": "If true, exclude the large 'document' text column from results to reduce context overhead. Defaults to true for broad searches (empty query or limit >= 200) when not specified. Set false when you need the document text.",
             },
         },
         "required": [
@@ -259,13 +261,22 @@ search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recomm
             str: Markdown formatted search results with error details if search fails.
         """
         limit = kwargs.pop("limit", 150)
-        exclude_document = kwargs.pop("exclude_document", False)
+        exclude_document = kwargs.pop("exclude_document", None)
+        query = str(kwargs.get("query") or "").strip()
+        if exclude_document is None:
+            # Broad searches default to metadata-only output to avoid flooding context.
+            try:
+                broad_limit = float(limit) >= self._BROAD_SEARCH_LIMIT
+            except (TypeError, ValueError):
+                broad_limit = False
+            exclude_document = not query or broad_limit
+        exclude_document = bool(exclude_document)
         # Username for log correlation (if propagated from app/Assistant)
         username = kwargs.pop("username", None) or kwargs.pop("user", None)
 
         tool_start = time.perf_counter()
         try:
-            search_params, results, info = _execute_search(
+            _search_params, results, info = _execute_search(
                 self.searcher,
                 kwargs,
                 limit=limit,
@@ -273,10 +284,10 @@ search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recomm
             )
         except Exception as e:
             elapsed = time.perf_counter() - tool_start
-            logger.exception("SearchTool failed user=%s query=%r", username or "<none>", search_params.query)
+            logger.exception("SearchTool failed user=%s query=%r", username or "<none>", query)
             if isinstance(e, TimeoutError):
                 return (
-                    f"Search timed out after {elapsed:.1f}s (query={search_params.query!r}). "
+                    f"Search timed out after {elapsed:.1f}s (query={query!r}). "
                     f"Vector embedding via Azure AI likely hung. Error: {e}"
                 )
             return f"Search failed after {elapsed:.1f}s: {e}"
@@ -285,7 +296,11 @@ search(query="", year_range=[2000, 2026], document_type=["safety_issue", "recomm
         if info.get("info_message"):
             summary += f"\n_{info['info_message']}_"
         if exclude_document:
-            summary += "\n_document column excluded (exclude_document=true) — reduced context overhead_"
+            summary += (
+                "\n_document column excluded (exclude_document=true) — reduced context overhead. "
+                "Set exclude_document=false if you need the document text; use delegate_analysis "
+                "to analyse many documents._"
+            )
 
         if "agency_id" in results.columns and "url" in results.columns:
             results["agency_id"] = results.apply(
@@ -373,7 +388,7 @@ ANALYZE_SEARCH_PARAMETERS["description"] = (
     "this call."
 )
 ANALYZE_SEARCH_PARAMETERS["properties"]["limit"]["description"] = (
-    "Maximum search rows to retrieve. Default 500."
+    "Maximum search rows to retrieve. Default 500, maximum 5000."
 )
 ANALYZE_SEARCH_PARAMETERS["properties"]["exclude_document"]["description"] = (
     "Drop the document column before analysis. Default false."
@@ -385,6 +400,10 @@ class AnalyzeResultsTool(Tool):
 
     _tool_name = "analyze_results"
     _tool_description = """Run a search and calculate simple statistics on its results in one call.
+
+Use this for any count, total, or breakdown instead of retrieving search rows and
+tallying them yourself. Use `distinct_by="document_id"` to count safety issues and
+`distinct_by="report_id"` to count reports.
 
 Pass the same `search` object you would pass to the search tool, plus `fn` and
 `column` (except for fn="size"). The search is executed internally, so no prior
@@ -406,6 +425,7 @@ Examples:
 - Average fatalities in fatal accidents: {"fn": "mean", "column": "fatalities", "filters": {"fatalities": {">": 0}}, "distinct_by": "report_id"}
 - Average fatalities in aviation: {"fn": "mean", "column": "fatalities", "filters": {"mode": "0"}}
 - Reports mentioning engine failure: {"fn": "size", "filters": {"document": {"contains": "engine failure"}}, "distinct_by": "report_id"}
+- Safety issues by agency: {"fn": "size", "by": ["agency"], "distinct_by": "document_id"}
 - Count by document type: {"fn": "size", "by": ["document_type"]}
 - Unique reports by agency: {"fn": "nunique", "column": "report_id", "by": ["agency"]}
 """
@@ -1197,14 +1217,19 @@ class DelegateTool(Tool):
 
     _tool_name = "delegate_analysis"
     _tool_description = """Execute one or more tools and analyse their combined output with a separate AI.
-Useful when you have too much data to fit in your context window. You specify tool calls
-to run (e.g. search_tool, read_report) plus analysis instructions. The tools are executed,
+Useful when a search would return too much data for the conversation context. You specify tool calls
+(e.g. search, search_report_text, read_report) plus analysis instructions. The tools are executed,
 and their results are sent to a fresh AI that only sees that content.
 
+Use this for broad searches or more than about 100 result documents, especially when you need to
+read or classify the document text. Do not pull large result sets into the main conversation.
+For `search` calls, document text is included by default inside delegate_analysis unless
+`exclude_document=true` is set, because the delegated AI needs the text to analyse it.
+
 Examples:
-- delegate_analysis(tool_calls=[{"name": "search_tool", "arguments": {"query": "engine failure helicopter", "limit": 50}}], instruction="Summarise the common safety themes")
+- delegate_analysis(tool_calls=[{"name": "search", "arguments": {"query": "engine failure helicopter", "limit": 50}}], instruction="Summarise the common safety themes")
 - delegate_analysis(tool_calls=[{"name": "read_report", "arguments": {"report_id": "..."}}], instruction="List all safety issues")
-- Multiple: delegate_analysis(tool_calls=[{"name": "search_tool", "arguments": {...}}, {"name": "search_tool", "arguments": {...}}], instruction="Compare and contrast findings")
+- Multiple: delegate_analysis(tool_calls=[{"name": "search", "arguments": {...}}, {"name": "search", "arguments": {...}}], instruction="Compare and contrast findings")
 """
     _tool_parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
@@ -1217,7 +1242,7 @@ Examples:
                     "properties": {
                         "name": {
                             "type": "string",
-                            "description": "Tool name to call (e.g. search_tool, read_report, find_relevant_reports).",
+                            "description": "Tool name to call (e.g. search, search_report_text, read_report).",
                         },
                         "arguments": {
                             "type": "object",
@@ -1262,6 +1287,10 @@ Examples:
             if not tool:
                 output = f"Error: Unknown tool '{tool_name}'"
             else:
+                if tool_name == "search" and "exclude_document" not in tool_args:
+                    # Delegation exists to analyse the result text, so include it
+                    # unless the caller explicitly asked for metadata only.
+                    tool_args["exclude_document"] = False
                 try:
                     output = tool.execute(**tool_args)
                 except Exception as e:  # noqa: BLE001

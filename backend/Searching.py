@@ -462,7 +462,9 @@ class Searcher:
             ot_list = ", ".join(_sql_string(ot) for ot in occurrence_type)
             where_statement.append(f"occurrence_type in ({ot_list})")
         elif occurrence_type and len(occurrence_type) == 1:
-            where_statement.append(f"occurrence_type = '{occurrence_type[0]}'")
+            where_statement.append(
+                f"occurrence_type = {_sql_string(occurrence_type[0])}",
+            )
         if fatalities_range:
             if int(fatalities_range[1]) == -1:
                 where_statement.append(

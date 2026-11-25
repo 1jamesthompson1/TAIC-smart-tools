@@ -1,9 +1,11 @@
 ---
 name: finding-previous-occurrences
-description: When the user asks to find previous occurrences which may be in relation to accident occurrences, safety issues or recommendations. This is commonly used when doing a safety investigation.
+description: When the user asks to find previous occurrences of a specific safety issue, recommendation, or accident occurrence. Only use when the user supplies a specific issue or recommendation. Do not use for aggregate counts, trends, or broad topic searches.
 ---
 
-If not given a safety issue or recommendation you should ask for what the user wants to find previous occurrences of. If given a safety issue or recommendation you should search for previous occurrences of that issue or recommendation. 
+This skill is for finding previous occurrences of a specific safety issue, recommendation, or accident occurrence. Do not use it for aggregate counts, totals, trends, or broad topic sweeps; use the `analyze_results` or `search` tools for those.
+
+If not given a specific safety issue, recommendation, or accident occurrence, you should ask what the user wants to find previous occurrences of. If given one, search for previous occurrences of it. 
 
 Assume it is just for TAIC unless they ask otherwise.
 

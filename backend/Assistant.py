@@ -530,6 +530,8 @@ You are to orient yourself to the user's query and provide a plan for how you wi
 If you need more information you should call functions to get that information.
 If you have enough information to respond to the user, you should provide a short guideline for how you will respond to the user (you will be acting on this plan momentarily).
 
+For count or aggregate questions, plan to use `analyze_results` rather than retrieving document text. If the requested concept is not a controlled field, plan to state your inclusion rule or ask one clarifying question.
+
 {general_info}
 
 Remember you will be given a chance to respond to the user after you have made your plan. You are just providing a plan and your thoughts right now.
